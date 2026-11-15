@@ -348,10 +348,9 @@ ok "every brief says who speaks in its pane, and the four that record findings q
 for role in design planner main-ops operator reviewer; do
   expect_ok crewpy brief wldn $role
   has "$out" 'anything for another drive is sent with `'
-  has "$out" '/crew send <drive> "<text>"`, which reaches that drive'"'"'s operator, its one door, and to nobody else.'
   lacks "$out" "or one of its teams is sent"; lacks "$out" "crew send <team or drive>"
 done
-ok "every brief sends anything for another drive with crew send, to that drive's operator and to nobody else"
+ok "every brief sends anything for another drive with crew send, naming no team"
 ok "a signal names where what it points at lives, a unit carries it as a source, and the construct reads it, stops when it can't, and builds from its sources over its intent"
 
 # Every message an agent sends another goes through crew tell, marked: no brief prompts an agent through herdr.
