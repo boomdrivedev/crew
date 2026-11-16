@@ -734,7 +734,7 @@ When an act of crew's that raises a kit's landings card reads the user's send on
 - **THEN** the raise posts the fix's land first, of the fix's launch, and then `y`'s
 
 ### Requirement: A landings row is due one land for each send and head
-A row of a kit's landings card SHALL be due a land when its box was ticked on a send that stands for it at its head now, it can land, and no land of its launch stands undecided or was posted at that head, but a land stopped there on proof or on another send, which bars no send. A send read twice SHALL post once, and a send that stands through a take-main fix SHALL post again once the bolt reads proven at its new head. A write replayed on a tip that already holds the lands SHALL write nothing.
+A row of a landings card SHALL be due a land when its box was ticked on a send that stands for it at its head now, it can land, and no land of it stands undecided or was posted at that head, but one that waited on its branch or was stopped there on proof or on another send, which bars no send. A send read twice SHALL post once, and one standing through a take-main fix SHALL post again once the bolt is proven at its new head. A write replayed on a tip holding them SHALL write nothing.
 
 #### Scenario: The send read again
 - **WHEN** a later raise reads the user's send on `land/crew` with `y` and `z` still at the heads they were ticked at, their lands posted
@@ -800,10 +800,10 @@ A started bolt with no launch of `bolt/<bolt>` in the drive's requests SHALL lan
 - **THEN** `land/crew` shows `y` ticked and no row for `w`
 
 ### Requirement: A landing the runner or Flume stopped keeps its box
-A bolt whose land the runner answered refused, or whose submission Flume reports withdrawn or refused and waiting on its caller, as the runner's report carries it, SHALL keep its box while its kit's main does not hold its work (record 0056 decision 6). Its row SHALL say what stopped its landing at that head, in the runner's or Flume's words, nothing of the bolt's. The send that ticked it SHALL be spent: crew SHALL post no land of it again on that send.
+A bolt whose land the runner answered refused, Flume naming no place on its branch, or whose submission Flume reports withdrawn or refused and waiting on its caller, as the runner's report carries it, SHALL keep its box while its kit's main does not hold its work. Its row SHALL say what stopped its landing at that head, in the runner's or Flume's words, nothing of the bolt's. The send that ticked it SHALL be spent: crew SHALL post no land of it again on that send.
 
 #### Scenario: The runner refuses the land
-- **WHEN** the user sent `land/crew` with `z` ticked, crew posted `z`'s land, and the runner answered it refused, a place on `bolt/z` being live
+- **WHEN** the user sent `land/crew` with `z` ticked, crew posted `z`'s land, and the runner answered it refused, Flume naming no place on `bolt/z`
 - **THEN** `z` keeps its box, its row says its landing at that head was stopped, in the runner's words, nothing of the bolt's, and no raise posts another land of `z` on that send
 
 #### Scenario: Flume's submission withdrawn
@@ -1870,7 +1870,7 @@ A kit's landings card SHALL ask only about bolts marked to stay, bolts the user 
 - **THEN** `land/crew` is an approve naming `z` alone, and `y` is no row of it
 
 #### Scenario: A land on proof stopped
-- **WHEN** crew posted `y`'s land on proof at `abc1234` and the runner answered it refused, a place on `bolt/y` being live
+- **WHEN** crew posted `y`'s land on proof at `abc1234` and the runner answered it refused, Flume naming no place on `bolt/y`
 - **THEN** `land/crew` asks for `y` with its box, its row saying its land on proof at `abc1234` was stopped, in the runner's words, nothing of the bolt's, no raise posts another land of `y` at that head, and the user's send lands it, a stop of crew's land on proof spending no send of theirs
 
 #### Scenario: A bolt the user left
@@ -1969,5 +1969,20 @@ The read that records a ticked bolt's landing stopped or refused SHALL raise its
 - **THEN** that read raises `land/flume`, which is closed saying `x` and `y` landed and `z` was stopped and in whose words, and a card following it asks for `z`, with no `crew card read` run
 
 #### Scenario: A stopped land whose head moved
-- **WHEN** `z`, marked to stay, was ticked on `land/crew`'s send at `abc1234`, the land that send posted was stopped there, a place on `bolt/z` being live, and that place merged, so `z` reads proven at `def5678` with its own work unchanged
+- **WHEN** `z`, marked to stay, was ticked on `land/crew`'s send at `abc1234`, the land that send posted was stopped there, Flume naming no place on `bolt/z`, and a take-main fix later merged into `bolt/z`, so `z` reads proven at `def5678` with its own work unchanged
 - **THEN** no land of `z` is posted on that send, and the next raise closes `land/crew` naming `z`'s stop, its send spent, and posts a card following it that asks for `z` at `def5678`
+
+### Requirement: A send stands for a bolt whose land waits on its branch, its card left
+While a land of a bolt the user's send ticked waits on the places on its branch, or none is posted while Flume names one (bolt-teams), crew SHALL keep the send standing: the card SHALL be left, and SHALL NOT be closed counting the bolt stopped or held. `crew card read land/<kit>` SHALL say of a land that waits that the send stands and lands the bolt once no place on its branch is live.
+
+#### Scenario: Ticked beside two that land
+- **WHEN** the user sent `land/flume` ticking `x`, `y` and `z`, `x` and `y` land, and `z`'s land on that send waits on `fix--z-1`
+- **THEN** `land/flume` is left as it is, not closed saying `z` was stopped, and the sweep says it waits on the runner to land `z`
+
+#### Scenario: The card's read
+- **WHEN** `z`'s land on the user's send of `land/flume`, request 332, waits on `fix--z-1`
+- **THEN** `crew card read land/flume` says `z`'s land, request 332, waits on the places on `bolt/z`, nothing of the bolt's, in Flume's words, and that the user's send stands and lands `z` once none is live
+
+#### Scenario: The send carried
+- **WHEN** `fix--z-1` takes main in and lands on `bolt/z`, and `z` reads proven at `6c693a0` with its own work unchanged
+- **THEN** the next raise posts `z`'s land at `6c693a0` on that send, and once `z` lands, `land/flume` closes saying `x`, `y` and `z` landed

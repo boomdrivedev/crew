@@ -1694,7 +1694,9 @@ class Stages:
         for a bolt started before bolts were base places (runner.legacy_said); unknown where the drive's runners
         can't be read; None for a bolt not started. Any outcome but landed is read against its kit's main, and reads
         {outcome: landed, commit} at main's commit that landed it once main holds its work (main_landing), the keys a
-        landed report gives (a-landed-bolt-is-closed-and-offered-no-more, Decision 3)."""
+        landed report gives (a-landed-bolt-is-closed-and-offered-no-more, Decision 3). A land the run record holds
+        recorded waiting reads none once Flume names no place on its branch (landing_waited), and unknown where the
+        run record can't be read to tell (read.1)."""
         if not started(bolt):
             return None
         run = self.runner(self.label)
@@ -1705,7 +1707,10 @@ class Stages:
         if launch is None:
             l = {"outcome": "legacy", "words": runner.legacy_said(bolt.name())}
         else:
-            l = runner.landing_of(launch, runner.lands_of(requests, launch), reads)
+            try:
+                l = landing_waited(launch, requests, reads, self.entries)
+            except Refusal as e:
+                l = {"outcome": "unknown", "why": f"crew can't tell whether bolt {bolt.name()}'s land waited on its branch: {e}"}
         if l.get("outcome") == "landed":
             return l
         m, _ = self.main_landing(bolt)  # read against its kit's main where the report does not read it landed (Decision 3)
@@ -3819,15 +3824,39 @@ class Unposted(Exception):
 def lands_posted(entries):
     """The lands crew recorded posting on the user's sends (crew-lands-each-bolt-through-flumes-base-place, Decision 4),
     from the run record's entries, oldest first: each bolt.submit or fix.merge marked Outcome asked with the land's
-    Request, not refused, as {work, card, head, request}, its work the bolt's or the fix of main's it is On."""
-    out = []
+    Request, not refused, as {work, card, head, request}, its work the bolt's or the fix of main's it is On, marked
+    waited where the run record holds that land recorded waiting (lands_waited), so it bars no land at its head and
+    spends no send (runner.lands_due; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 4)."""
+    out, waited = [], lands_waited(entries)
     for e in entries:
         if e.get("Act") not in ("bolt.submit", "fix.merge") or e.get("Refused") or not e.get("Request"):
             continue
         work = next((o for o in e.get("On") or [] if o.startswith(("bolt/", "fix/main/"))), None)
         if work:
-            out.append(dict(work=work, card=e.get("Card"), head=e.get("Head"), request=e["Request"]))
+            out.append(dict(work=work, card=e.get("Card"), head=e.get("Head"), request=e["Request"],
+                            **({"waited": True} if e["Request"] in waited else {})))
     return out
+
+
+def lands_waited(entries):
+    """The requests of the lands the run record holds recorded waiting (a-land-waits-while-a-place-on-its-bolts-branch-
+    is-live, Decision 4), from its entries, oldest first: each bolt.submit marked Outcome waiting, not refused, by its
+    Request, as text. A land that waited on the places Flume named on its bolt's branch is no land standing once Flume
+    names none (runner.landing_outcome), and bars no land and spends no send (runner.lands_due). A decision of facts
+    alone (code.7)."""
+    return {e["Request"] for e in entries if e.get("Act") == "bolt.submit" and e.get("Outcome") == "waiting"
+            and not e.get("Refused") and e.get("Request")}
+
+
+def waits(entries):
+    """Each bolt whose last landing the run record holds waiting on the places Flume named on its branch, nothing of the
+    bolt's (bolt-teams "A land refused while a place on its bolt's branch is live waits", landing_entry), from its
+    entries, oldest first: {bolt: (head, request, words)}, the head its land carried, the land's request and Flume's
+    words, from each bolt's last bolt.submit when it is marked Outcome waiting; a bolt whose last one is anything else,
+    or that has none, is not in it. A wait is no stop and no landing in flight: the send that posted it stands. A
+    decision of facts alone (code.7)."""
+    return {b: (e.get("Head") or "", e.get("Request") or "", e.get("Why") or "") for b, e in last_submits(entries).items()
+            if e.get("Outcome") == "waiting" and not e.get("Refused")}
 
 
 def lands_sent(entries, key, owner, card=None, shown=(), ticked=()):
@@ -4498,9 +4527,9 @@ def started_land(fleet, label, plan, b, units, by, close_why, card):
     bolt = b.name()
     requests, reads = runner_facts(fleet, label)
     launch = runner.launch_of(requests, f"bolt/{bolt}")
-    l = runner.landing_of(launch, runner.lands_of(requests, launch), reads) if launch is not None else None
-    kit_name = (b.get("Repo") or (launch or {}).get("Repo") or "").split("/")[-1]
     entries = drive_entries(fleet, label)
+    l = landing_waited(launch, requests, reads, entries) if launch is not None else None
+    kit_name = (b.get("Repo") or (launch or {}).get("Repo") or "").split("/")[-1]
     if l is None or l["outcome"] != "landed":
         # its work on its kit's main, whatever the report says, closes it at main's commit (Decision 5)
         st = Stages(fleet, plan, {}, runs={label: (requests, reads)}, label=label)
@@ -4852,7 +4881,9 @@ def landing_line(landing, phase, head, bolt=None):
     commit; refused, at the head its land was posted at, while that is the bolt's head now, in Flume's words with what
     comes next, the bolt open for work and ops's fix for a failed check, or that it takes main first for a conflict
     (runner.landing_said, given the bolt), whether or not the run record holds it yet, and nothing once a fix has moved
-    the head, the refusal holding nothing; stopped at that head, in its words; unknown, why; a bolt started before bolts
+    the head, the refusal holding nothing; stopped at that head, in its words; waiting at that head on the places Flume
+    names on its branch, crew landing it once none is live (a-land-waits-while-a-place-on-its-bolts-branch-is-live,
+    Decision 5); unknown, why; a bolt started before bolts
     were base places, that it lands under the crew that started it; else the run record's words (phase_said); None for
     nothing to say. A decision of facts alone (code.7)."""
     o = (landing or {}).get("outcome")
@@ -4864,7 +4895,7 @@ def landing_line(landing, phase, head, bolt=None):
         return f"landing again as #{landing['entry']}, {state}, after {rejected_said(*phase['rejected'])} was refused"
     if o in ("asked", "submitted", "landed", "unknown"):
         return runner.landing_said(landing)
-    if o == "stopped":
+    if o in ("stopped", "waiting"):
         return runner.landing_said(landing, head=at or head)
     if o == "refused":
         if at and head and not at_head(at, head):
@@ -4883,7 +4914,8 @@ def phase_at(w, bolt):
         try:
             requests = requests_of(w).recs("Request")
             launch = runner.launch_of(requests, f"bolt/{bolt}")
-            l = runner.landing_of(launch, runner.lands_of(requests, launch), w.runners()) if launch is not None else {}
+            l = runner.landing_of(launch, runner.lands_of(requests, launch), w.runners(), lands_waited(w.entries())) \
+                if launch is not None else {}
         except Refusal:
             l = {}
         if l.get("entry"):
@@ -4923,8 +4955,10 @@ def landing_entry(entries, bolt, l):
     record, oldest first; l, the landing as runner.landing_of reads it. For an outcome decided, landed, refused or
     stopped, its fields: Outcome landed or stopped, or the refusal's words as Refused, the land's Request and the Head
     its land carried, from the newest land crew posted of the bolt (lands_posted), the merge queue's entry as Submission
-    where Flume names one, and the words of a stop as Why; None for one undecided, unknown or unlaunched, and for one
-    the run record already holds at that request, so a read twice records once. A landing read on the kit's main (l
+    where Flume names one, and the words of a stop as Why; for a land that waits on the places Flume names on the
+    bolt's branch, Outcome waiting with its Request, Head and Flume's words as Why, no Refused and no Submission
+    (run-record "A land that waits on its branch is one entry marked waiting"); None for one undecided, unknown or
+    unlaunched, and for one the run record already holds at that request, so a read twice records once. A landing read on the kit's main (l
     marked by main, which only Stages.main_landing's readers build, carrying the kit, main's commit, the newest head a
     landing of it carried and the landing still pending; a-landed-bolt-is-closed-and-offered-no-more, Decision 5) is
     recorded landed with that Head, Submission and Request, which end an older crew's queued landing and, being the
@@ -4937,15 +4971,17 @@ def landing_entry(entries, bolt, l):
         return dict(Request=l.get("request") or None, Head=l.get("head") or None, Submission=l.get("submission") or None,
                     Outcome="landed", Why=f"bolt({bolt}): landed on {l.get('kit') or 'its kit'}'s main at {(l.get('commit') or '')[:7]}, "
                                           "as GitHub's main holds it")
-    if l.get("outcome") not in ("landed", "refused", "stopped"):
+    if l.get("outcome") not in ("landed", "refused", "stopped", "waiting"):
         return None
     asked = next((p for p in reversed(lands_posted(entries)) if p["work"] == f"bolt/{bolt}"), None)
     n = str(l.get("request") or (asked or {}).get("request") or "")
     mine = [e for e in entries if e.get("Act") == "bolt.submit" and f"bolt/{bolt}" in (e.get("On") or [])
-            and (e.get("Request") or "") == n and (e.get("Outcome") in ("landed", "stopped") or e.get("Refused"))]
+            and (e.get("Request") or "") == n and (e.get("Outcome") in ("landed", "stopped", "waiting") or e.get("Refused"))]
     if mine:
         return None
     fields = dict(Request=n or None, Head=(asked or {}).get("head") or None, Submission=l.get("entry"))
+    if l["outcome"] == "waiting":  # nothing of the bolt's and nothing submitted: the send that posted it stands
+        return dict(fields, Submission=None, Outcome="waiting", Why=l.get("words") or "waits on the places on its branch")
     if l["outcome"] == "landed":
         return dict(fields, Outcome="landed", Why=f"bolt({bolt}): landed on main at {(l.get('commit') or '')[:7]}, as the runner reports it")
     if l["outcome"] == "stopped":
@@ -4966,14 +5002,20 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     bolt, once however often it is read (take_main_launch). Where the bolt's base place names a landing fix (runner.landing_way;
     crews-bolt-kind-names-its-landing-fix, Decision 4), a refusal whose way on is Flume's, its landing fix live, landed
     or due, launches nothing and asks nothing, and one whose way on is its caller's, past the bound or its fix dropped
-    or not launched, asks ops in Flume's words (runner.caller_said) and launches nothing. Each record is decided at the tip its write is applied to, so two reads at once record once.
+    or not launched, asks ops in Flume's words (runner.caller_said) and launches nothing. A land that waits on the
+    places Flume names on the bolt's branch is recorded waiting, once, and asks ops nothing and raises no card, its
+    send standing (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3). Each record is decided at the tip its write is applied to, so two reads at once record once.
     Nothing is recorded for a landing undecided or one crew can't tell (read.1). Where the report does not read it landed,
     one with no launch of its own among them, and its kit's main holds its work (landing_on_main; a-landed-bolt-is-
     closed-and-offered-no-more, Decision 5), it is recorded landed and closed the same way, ops asked nothing. (whether
     it reads landed, what is said of it), said too."""
     requests, reads = run or runner_facts(fleet, label)
     launch = runner.launch_of(requests, f"bolt/{bolt}")
-    l = runner.landing_of(launch, runner.lands_of(requests, launch), reads) if launch is not None else None
+    def record_now():  # the run record, read once where a wait must be told from a stop (landing_waited)
+        nonlocal entries
+        entries = drive_entries(fleet, label) if entries is None else entries
+        return entries
+    l = landing_waited(launch, requests, reads, record_now) if launch is not None else None
     if l is None or l["outcome"] != "landed":
         # its work on its kit's main, whatever the report says: recorded and closed, ops asked nothing (Decision 5)
         m = landing_on_main(fleet, label, bolt, (requests, reads), entries)
@@ -4998,7 +5040,9 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
             landing_close(fleet, label, bolt, l, entries, card)
         return True, said
     by = (l.get("fix") or {}).get("by", "crew")  # whose a refusal's way on is (runner.landing_way)
-    recorded = l["outcome"] in ("refused", "stopped") and landing_record(fleet, label, bolt, l, said, ops)
+    recorded = l["outcome"] in ("refused", "stopped", "waiting") and landing_record(fleet, label, bolt, l, said, ops)
+    if l["outcome"] == "waiting":  # nothing for ops to do and no card to close: the send stands
+        return False, said
     if recorded and (l["outcome"] == "stopped" or by in ("crew", "caller")):
         unlanded_ask(fleet, label, bolt, kit_name, landing_request(entries, bolt, l),
                      runner.caller_said(l, bolt) if l["outcome"] == "refused" and by == "caller" else said)
@@ -5007,6 +5051,21 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     if recorded and card:  # its kit's card raised on what was recorded, which closes an answered card at a stop (unheld_raise)
         unheld_raise(fleet, label, bolt, launch)
     return False, said
+
+
+def landing_waited(launch, requests, reads, entries):
+    """A started bolt's landing as runner.landing_of reads it given the lands the run record holds recorded waiting
+    (lands_waited), so a land that waited on the places Flume named on its bolt's branch reads none once Flume names
+    none, and is no stop (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 4): launch, its base place's
+    launch; requests, requests.rec's records; reads, the drive's runners; entries, the run record's entries, or a
+    function that reads them, read only where the newest land the runner refused reads stopped, the one outcome a wait
+    changes, so a read that finds none reads no record (plan.12); a read of it refused raises. A decision of facts
+    alone but for the read it is handed (code.7)."""
+    lands = runner.lands_of(requests, launch)
+    l = runner.landing_of(launch, lands, reads)
+    if l.get("outcome") != "stopped" or l.get("by") != "runner":
+        return l
+    return runner.landing_of(launch, lands, reads, lands_waited(entries() if callable(entries) else entries))
 
 
 def unheld_raise(fleet, label, bolt, launch):
@@ -8594,7 +8653,7 @@ def stopped(label, act, on, said):
 def landings_judged(fleet, label, plan, sv, runs):
     """The landings each host's card sweep reads (reap_judged), from the rail's read and reading nothing (code.7):
     {host: [{bolt, kit, dir, stages}]}, each started bolt of the drive whose landing the runner's report has decided,
-    landed, refused or stopped (Stages.landing), under the host its work runs on as the read holds it (known_at), with
+    landed, refused or stopped, or that waits on the places on its branch (Stages.landing), under the host its work runs on as the read holds it (known_at), with
     its kit's folder there and the stage of each unit and chore the plan holds in it (Stages), so a sweep reads no plan
     or kit of its own (plan.12), and one with no landing decided reads nothing for it; none where the read holds no
     runners of the drive. A bolt read landed on its kit's main (Stages.landed_on_main; a-landed-bolt-is-closed-and-offered-
@@ -8605,7 +8664,7 @@ def landings_judged(fleet, label, plan, sv, runs):
     st, out = Stages(fleet, plan, sv, runs, label), {}
     of = st.of
     for b in plan.bolts():
-        decided = started(b) and (st.landing(b) or {}).get("outcome") in ("landed", "refused", "stopped")
+        decided = started(b) and (st.landing(b) or {}).get("outcome") in ("landed", "refused", "stopped", "waiting")
         main = decided and st.landed_on_main(b)
         t = known_at(fleet, label, b, runs[label]) if decided else None
         if t or main:
@@ -10674,6 +10733,7 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             if o == "landed":  # as the runner reports it or as its kit's main holds it: its close is crew's next read (Decision 6)
                 continue
             here = not (phase or {}).get("head") or at_head(phase["head"], head)  # the head its last land was posted at
+            waiting = None  # what its land waits on: the places Flume names on its branch (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)
             if o == "stopped" and here and not stop:  # the runner's or Flume's stop, before a read records it
                 stop = (landing.get("words") or "").strip().splitlines()[0] if (landing.get("words") or "").strip() else "stopped"
             if o == "legacy":  # it lands under the crew that started it (Decision 9)
@@ -10683,6 +10743,8 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             elif o == "unknown":  # crew can't tell it from the runner's report: said, and why (read.1)
                 lands = [landing_line(landing, phase, head, b.name()) + (": no unit, chore or fix joins it until its outcome is read"
                                                                          if phase and phase["state"] in ("queued", "again", "asked") else "")]
+            elif o == "waiting" and not lands:  # its land refused while Flume names a place on its branch: no stop, its send standing
+                waiting = landing_line(landing, phase, head, b.name())
             elif o in ("asked", "submitted") or o != "stopped" and phase and phase["state"] in ("queued", "again", "asked"):
                 said = landing_line(landing, phase, head, b.name()) or ""
                 if (held.get(l, {}).get("forms") or {}).get(b.name()) == "proof":  # its land posted on proof (Decision 7)
@@ -10699,6 +10761,10 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             elif not lands and conflict:  # forecast at this head to conflict with what main holds (main_conflict)
                 lands = [f"takes main first: forecast to conflict with main on {joined(conflict[1])}, until a fix "
                          "taking main in moves its head"]
+            elif not lands and o == "none" and landing.get("places"):  # no land of it is asked while Flume names a place there
+                places = landing["places"]
+                waiting = (f"no land of it is asked while {runner.places_said(places)} {'is' if len(places) == 1 else 'are'} live "
+                           f"on bolt/{b.name()}: crew asks the runner once none is")
             # how the bolt lands once it can (lands_by): on proof, on the user's send, or once a hold is lifted (Decision 7)
             stays = b.get("Stays") == "yes"
             left = bool(left_of(held.get(l, {}).get("left") or [], f"land/{kit_name}", {b.name(): head}))
@@ -10713,6 +10779,7 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
                 can = [("stays: can" if stays else "left by you: can" if left else "can") + f" land on your send of land/{kit_name}"] + (
                     [f"its last landing at {head[:7]} was stopped, nothing of the bolt's: {stop.rstrip('.')}; it lands on your next send"]
                     if stop else [])  # stopped_at, holding nothing
+            can += [waiting] if waiting else []  # how it lands, then what its land waits on (Decision 5)
             # how the kit's card stands for the bolt, once the run record was read, for a row the card asks about (card_stand,
             # design Decision 8)
             stand = card_stand(b.name(), head, not lands, (held[l].get("land_cards") or {}).get(f"land/{kit_name}"),
@@ -10959,7 +11026,9 @@ def ticked_waits(entries, card, ticked, since=""):
     """Of the bolts the user's send on a kit's landings card (card, its id) ticked, in its order, those it still waits
     on the runner to land, from the run record's entries, oldest first: each with no bolt.land or bolt.drop of it at
     or after since, the answer's time as the record writes it, none refused, and none whose land that send posted was
-    stopped (send_spent). A decision of facts alone (code.7)."""
+    stopped (send_spent); one whose land waits on the places Flume names on its branch is still waited on, a wait
+    spending no send (waits; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3). A decision of facts
+    alone (code.7)."""
     ended = {o[5:] for e in entries if e.get("Act") in ("bolt.land", "bolt.drop") and not e.get("Refused") and (e.get("At") or "") >= since
              for o in e.get("On") or [] if o.startswith("bolt/")}
     spent = send_spent(entries, card, [b for b in ticked if b not in ended])
@@ -12787,7 +12856,7 @@ def row_name(work):
 
 
 def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_first=(), gone=None, posted=None, hold=None,
-                  on_proof=(), on_send=()):
+                  on_proof=(), on_send=(), waits=None):
     """What crew card read land/<kit> prints beside the answer once the user sent the kit's landings card (rail-cards
     "The landings card's read prints the lands crew posted"): the rows they ticked in the card's order (ticked_of, heads
     its rows as card_heads gives them), each with the land crew posted for it on the send and its request (posted,
@@ -12809,8 +12878,12 @@ def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_
     (rail-cards "A send under a hold"). A bolt whose stopped land was crew's land on proof (on_proof, stopped_on_proof)
     is said so, its stop spending no send: this send lands it, as for any bolt it lands (rail-cards "A land on proof
     stopped"); so is one this card ticked whose stopped land an earlier card's send posted (on_send, stopped_by,
-    stop_spends), that earlier send being the one spent (rail-cards "A later card at the head of a stopped land")."""
-    ticked, earlier, stopped, gone = ticked_of(got, heads), list(earlier), stopped or {}, gone or {}
+    stop_spends), that earlier send being the one spent (rail-cards "A later card at the head of a stopped land"). Each
+    bolt it lands whose last landing the run record holds waiting on the places Flume names on its branch (waits,
+    {bolt: (head, request, words)}, plan.waits) is said with its land's request and Flume's words, nothing of the
+    bolt's, the user's send standing and landing it once none is live (rail-cards "A send stands for a bolt whose land
+    waits on its branch, its card left"; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)."""
+    ticked, earlier, stopped, gone, waits = ticked_of(got, heads), list(earlier), stopped or {}, gone or {}, waits or {}
     lands = [b for b in ticked or [] if b not in main_first and b not in gone]
     lines = [f"  can't tell whether the user's earlier send still lands {b}: {why}" for b, why in unknown]
     lines += [f"  to land on the user's send of an earlier card: {joined(earlier)}"] if earlier else []
@@ -12831,7 +12904,9 @@ def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_
               "it lands again only on the user's next send" for b in both if b in stopped]
     posted = posted or {}
     where = (hold or {}).get("kit") or f"the drive {label}"
-    return lines + [f"  {b}: asked of the runner to land, request {posted[b]}" if b in posted and b not in unspent else
+    return lines + [f"  {b}: its land, request {waits[b][1]}, waits on the places on bolt/{b}, nothing of the bolt's: "
+                    f"{waits[b][2].rstrip('.')}; the user's send stands, and lands {b} once none is live" if b in waits else
+                    f"  {b}: asked of the runner to land, request {posted[b]}" if b in posted and b not in unspent else
                     f"  {b}: no land is posted while the hold on {where} stands; the user's send stands, and lands {b} once "
                     "the hold is lifted" if hold else
                     f"  {b}: no land is posted for it yet: crew's next raise of the card posts it" for b in both
@@ -12926,7 +13001,8 @@ def landings_unopened(fleet, a, label, who, kit, entries, acts=None):
         return
     posted = {row_name(p["work"]): p["request"] for p in lands_posted(entries)}
     print("\n".join([f"card {a.key}: no landings card of {kit} is open"] + landing_lines(label, {}, [], earlier, unknown,
-                                                                                          stops(entries), posted=posted)))
+                                                                                          stops(entries), posted=posted,
+                                                                                          waits=waits(entries))))
 
 
 def card_read(fleet, a, acts=None):
@@ -13005,7 +13081,8 @@ def card_read(fleet, a, acts=None):
         r = reading_read(a.key, got, decided) if reads else dict(lines=[], aside=False)
         print("\n".join(cards.answer_lines(a.key, card, got)
                         + (landing_lines(label, got, heads, earlier, unknown, stopped, first, gone,
-                                         {row_name(p["work"]): p["request"] for p in lands_posted(whole)}, hold, on_proof, on_send)
+                                         {row_name(p["work"]): p["request"] for p in lands_posted(whole)}, hold, on_proof, on_send,
+                                         waits(whole))
                            if kind and kind[0] == "kit" else []) + r["lines"]))
         if r["aside"]:
             reading_decided(d, decided)
