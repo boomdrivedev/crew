@@ -18,7 +18,7 @@ Before the first task, sync the tests' venv once: `devenv shell -- moon run test
 ## 3. The landings card
 
 - [x] 3.1 An answered landings card is left while a bolt it ticked waits on its branch, its send standing and the sweep still waiting on it (design Decisions 3 and 4; Task notes 3.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing"`.
-- [ ] 3.2 `crew card read land/<kit>` says a land waits on the places on its bolt's branch, with its request and Flume's words, and that the send stands (design Decision 5; Task notes 3.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_crew_card_read_says_a_land_that_waits_on_its_branch_and_that_the_send_stands"`.
+- [x] 3.2 `crew card read land/<kit>` says a land waits on the places on its bolt's branch, with its request and Flume's words, and that the send stands (design Decision 5; Task notes 3.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_crew_card_read_says_a_land_that_waits_on_its_branch_and_that_the_send_stands"`.
 
 ## 4. The views
 

@@ -12846,7 +12846,7 @@ def row_name(work):
 
 
 def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_first=(), gone=None, posted=None, hold=None,
-                  on_proof=(), on_send=()):
+                  on_proof=(), on_send=(), waits=None):
     """What crew card read land/<kit> prints beside the answer once the user sent the kit's landings card (rail-cards
     "The landings card's read prints the lands crew posted"): the rows they ticked in the card's order (ticked_of, heads
     its rows as card_heads gives them), each with the land crew posted for it on the send and its request (posted,
@@ -12868,8 +12868,12 @@ def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_
     (rail-cards "A send under a hold"). A bolt whose stopped land was crew's land on proof (on_proof, stopped_on_proof)
     is said so, its stop spending no send: this send lands it, as for any bolt it lands (rail-cards "A land on proof
     stopped"); so is one this card ticked whose stopped land an earlier card's send posted (on_send, stopped_by,
-    stop_spends), that earlier send being the one spent (rail-cards "A later card at the head of a stopped land")."""
-    ticked, earlier, stopped, gone = ticked_of(got, heads), list(earlier), stopped or {}, gone or {}
+    stop_spends), that earlier send being the one spent (rail-cards "A later card at the head of a stopped land"). Each
+    bolt it lands whose last landing the run record holds waiting on the places Flume names on its branch (waits,
+    {bolt: (head, request, words)}, plan.waits) is said with its land's request and Flume's words, nothing of the
+    bolt's, the user's send standing and landing it once none is live (rail-cards "A send stands for a bolt whose land
+    waits on its branch, its card left"; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)."""
+    ticked, earlier, stopped, gone, waits = ticked_of(got, heads), list(earlier), stopped or {}, gone or {}, waits or {}
     lands = [b for b in ticked or [] if b not in main_first and b not in gone]
     lines = [f"  can't tell whether the user's earlier send still lands {b}: {why}" for b, why in unknown]
     lines += [f"  to land on the user's send of an earlier card: {joined(earlier)}"] if earlier else []
@@ -12890,7 +12894,9 @@ def landing_lines(label, got, heads, earlier=(), unknown=(), stopped=None, main_
               "it lands again only on the user's next send" for b in both if b in stopped]
     posted = posted or {}
     where = (hold or {}).get("kit") or f"the drive {label}"
-    return lines + [f"  {b}: asked of the runner to land, request {posted[b]}" if b in posted and b not in unspent else
+    return lines + [f"  {b}: its land, request {waits[b][1]}, waits on the places on bolt/{b}, nothing of the bolt's: "
+                    f"{waits[b][2].rstrip('.')}; the user's send stands, and lands {b} once none is live" if b in waits else
+                    f"  {b}: asked of the runner to land, request {posted[b]}" if b in posted and b not in unspent else
                     f"  {b}: no land is posted while the hold on {where} stands; the user's send stands, and lands {b} once "
                     "the hold is lifted" if hold else
                     f"  {b}: no land is posted for it yet: crew's next raise of the card posts it" for b in both
@@ -12985,7 +12991,8 @@ def landings_unopened(fleet, a, label, who, kit, entries, acts=None):
         return
     posted = {row_name(p["work"]): p["request"] for p in lands_posted(entries)}
     print("\n".join([f"card {a.key}: no landings card of {kit} is open"] + landing_lines(label, {}, [], earlier, unknown,
-                                                                                          stops(entries), posted=posted)))
+                                                                                          stops(entries), posted=posted,
+                                                                                          waits=waits(entries))))
 
 
 def card_read(fleet, a, acts=None):
@@ -13064,7 +13071,8 @@ def card_read(fleet, a, acts=None):
         r = reading_read(a.key, got, decided) if reads else dict(lines=[], aside=False)
         print("\n".join(cards.answer_lines(a.key, card, got)
                         + (landing_lines(label, got, heads, earlier, unknown, stopped, first, gone,
-                                         {row_name(p["work"]): p["request"] for p in lands_posted(whole)}, hold, on_proof, on_send)
+                                         {row_name(p["work"]): p["request"] for p in lands_posted(whole)}, hold, on_proof, on_send,
+                                         waits(whole))
                            if kind and kind[0] == "kit" else []) + r["lines"]))
         if r["aside"]:
             reading_decided(d, decided)

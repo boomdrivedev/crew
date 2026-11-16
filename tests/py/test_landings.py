@@ -1012,6 +1012,26 @@ def test_crew_card_read_says_what_stopped_a_bolt_the_send_lands_naming_no_land_f
     assert plan.landing_lines("swancloud", {}, [], ["z"], [], stopped)[1].startswith("  z's last landing at def5678 was stopped")
 
 
+def test_crew_card_read_says_a_land_that_waits_on_its_branch_and_that_the_send_stands():
+    """rail-cards "The card's read" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5): z's land on
+    the user's send of land/flume, request 332, waits on fix--z-1; crew card read land/flume says z's land, request 332,
+    waits on the places on bolt/z, nothing of the bolt's, in Flume's words, and that the user's send stands and lands z
+    once none is live, naming no land as merely asked; the same of a bolt an earlier send lands, with no card open."""
+    wait = "flume refused the retry: the base place bolt--z is submitted once no place on its branch bolt/z is live (203)"
+    entries = [dict(submitted("z", H1), Card="req_k1", Request="332", Outcome="asked"),
+               dict(submitted("z", H1), Request="332", Outcome="waiting", Why=wait)]
+    waits = plan.waits(entries)
+    assert waits == {"z": (H1, "332", wait)} and plan.stops(entries) == {}
+    sent = {"status": "answered", "turn": "agent", "answer": {"choiceIds": ["land:y", "land:z"]}}
+    heads = plan.card_heads("y@abc1234 z@abc1234")
+    said = (f"  z: its land, request 332, waits on the places on bolt/z, nothing of the bolt's: {wait}; the user's send stands, "
+            "and lands z once none is live")
+    assert plan.landing_lines("flume", sent, heads, [], [], plan.stops(entries), posted={"y": "331", "z": "332"}, waits=waits) == [
+        "  to land, in the card's order: y and z", "  y: asked of the runner to land, request 331", said]
+    assert plan.landing_lines("flume", {}, [], ["z"], [], {}, posted={"z": "332"}, waits=waits) == [
+        "  to land on the user's send of an earlier card: z", said]
+
+
 def test_a_ticked_bolt_proven_again_at_a_new_head_is_asked_again_rather_than_waited_for():
     """rail-cards "A fix adds a commit": the card that follows asks for y, saying what it gained."""
     gained = {"y": work([LEASE])}
