@@ -698,9 +698,12 @@ def flume_facts(status, place):
     the identity its fixes run as, spelled, None where its status names none, as flume 0.17.0's never does; fix_limit,
     how many fixes it runs before it waits on its caller; fixes, each fix Flume launched for it (fix_facts), in its
     order; and fixes_unread, the name, or the place in the list, of each fix crew can't read whole, which is left out
-    of fixes and counted toward no outcome (read.1). None when status holds no entry for it. Each also names the folder
-    of the place's repository on its host, and the stream it runs in, which say where the runner that took it keeps
-    the kit (where)."""
+    of fixes and counted toward no outcome (read.1); and, as flume 0.26.0 gives it, waiting_hold, the hold standing on
+    the move the place waits on its caller for, its words, since, in seconds, and bound, in seconds or None, as
+    {words, since, bound}, None where none stands, it lapsed, or its words or since are absent or of another shape
+    (Decision 3 of a-bolt-waiting-on-the-user-waits-under-words; flume 130). None when status holds no entry for it.
+    Each also names the folder of the place's repository on its host, and the stream it runs in, which say where the
+    runner that took it keeps the kit (where)."""
     places = at(status, "status", "places")
     mine = [p for p in places if isinstance(p, dict) and isinstance(p.get("place"), str)
             and (p["place"] == place or p["place"].startswith(f"{place}@"))] if isinstance(places, list) and place else []
@@ -740,7 +743,25 @@ def flume_facts(status, place):
         "fix_kind": text(at(p, "fix_kind", "identity", "spelled")), "fix_limit": count(p.get("fix_limit")),
         "fixes": tuple(x for x in fixes if x is not None),
         "fixes_unread": tuple((text(at(x, "name")) or f"fix {i + 1} of {len(listed)}") for i, x in enumerate(listed) if fixes[i] is None),
+        "waiting_hold": waiting_hold(p.get("holds")),
     }
+
+
+def seconds(v):
+    """A count of seconds as Flume gives one, an int that is no bool, or None."""
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def waiting_hold(holds):
+    """The hold standing on the move a place waits on its caller for, of Flume's status's holds as flume 0.26.0 lists
+    them ({on: waiting, words, since, bound, lapsed}; flume-seams held.rs Hold, the first on the waiting move not
+    lapsed, as Flume's own waiting_hold reads it): {words, since, bound}, bound None where it gives none; None where
+    none stands, or its words or since are absent or of another shape (read.2)."""
+    h = next((h for h in holds if isinstance(h, dict) and h.get("on") == "waiting" and h.get("lapsed") is None),
+             None) if isinstance(holds, list) else None
+    if h is None or not text(h.get("words")) or seconds(h.get("since")) is None:
+        return None
+    return {"words": h["words"], "since": h["since"], "bound": seconds(h.get("bound"))}
 
 
 def stage_of(work, launch, answer, place, read, after=()):

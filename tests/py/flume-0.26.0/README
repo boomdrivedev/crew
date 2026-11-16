@@ -1,0 +1,17 @@
+flume 0.26.0's status of a bolt's base place, `flume status --json <place>`, as a host's runner carries it in places.rec
+and crew reads the hold on the move it waits on from it (runner.flume_facts' waiting_hold, runner.hold_due; design
+Decision 3 of a-bolt-waiting-on-the-user-waits-under-words; tests/py/test_runner.py, tests/py/test_waiting_holds.py,
+tests/py/test_asks.py).
+
+None of these was recorded, since no host had held a base place's waiting move when they were made: each is written
+from flume 0.26.0's own types, `crates/flume-seams/src/held.rs` (Hold, HoldOn::Waiting, Waits::Unsubmitted),
+`crates/flume-core/src/status.rs` (base_waiting_on) and `crates/flume-core/src/answer.rs` (PlaceStatus), starting
+from flume-0.17.0/bolt-submitted.json's keys and trimmed as those are. The line's words are written, not flume's.
+
+bolt-unsubmitted    a base place of crew's kind crew/bolt@1 live with no place on its branch, its submission unasked
+                    (submission null), waiting on its caller for a retry of its submission, waiting_on {act retry,
+                    stage null, why unsubmitted, since 1794700000, words null}, under no hold (holds []), stalled
+bolt-held           bolt-unsubmitted under crew's hold of its waiting move, holds [{on waiting, words "the user, by
+                    their send of its row on crew's landings card, land/crew: it is marked to stay", since 1794700300,
+                    bound 604800}], not stalled (flume 130)
+bolt-held-lapsed    bolt-held with the hold lapsed at its bound (lapsed 1795305100), so stalled again (flume 130)

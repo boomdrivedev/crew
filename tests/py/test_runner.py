@@ -1053,6 +1053,58 @@ class TestABasePlacesStatus:
             "withdrawn", None, "submission", "the merge queue withdrew the submission")
 
 
+FLUME_26 = pathlib.Path(__file__).parent / "flume-0.26.0"
+
+
+def status_26(name):
+    return json.loads((FLUME_26 / f"{name}.json").read_text())
+
+
+class TestABasePlacesHold:
+    """What flume_facts reads of the hold standing on a bolt's base place's waiting move, as flume 0.26.0 lists it
+    (tests/py/flume-0.26.0/bolt-*.json; design Decision 3 of a-bolt-waiting-on-the-user-waits-under-words; flume 130):
+    its words, since and bound, and none where it lapsed, is of another move, or lacks its words or since (read.2)."""
+    PLACE = TestABasePlacesStatus.PLACE
+
+    def facts(self, status):
+        return runner.flume_facts(status, self.PLACE)
+
+    def test_a_hold_on_the_waiting_move_is_read_with_its_words_since_and_bound(self):
+        f = self.facts(status_26("bolt-held"))
+        assert (f["waiting"], f["waiting_stage"], f["stalled"], f["entry"]) == ("unsubmitted", None, False, None)
+        assert f["waiting_hold"] == {"words": "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay",
+                                     "since": 1794700300, "bound": 604800}
+        f = self.facts(status_26("bolt-unsubmitted"))
+        assert (f["waiting"], f["waiting_since"], f["stalled"], f["waiting_hold"]) == ("unsubmitted", 1794700000, True, None)
+
+    def test_a_lapsed_hold_is_no_hold(self):
+        f = self.facts(status_26("bolt-held-lapsed"))
+        assert (f["waiting"], f["waiting_hold"], f["stalled"]) == ("unsubmitted", None, True)
+
+    @pytest.mark.parametrize("hold", [
+        {"on": "stage", "stage": "code", "words": "Wait for the user.", "since": 1794700300},
+        {"on": "submission", "words": "Wait for the user.", "since": 1794700300},
+        {"on": "waiting", "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": "", "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": ["the user"], "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": "the user", "since": "1794700300", "bound": 604800},
+        {"on": "waiting", "words": "the user", "since": True, "bound": 604800},
+        {"on": "waiting", "words": "the user", "bound": 604800},
+        "waiting"])
+    def test_a_hold_of_another_move_or_missing_its_words_is_none(self, hold):
+        status = status_26("bolt-held")
+        status["status"]["places"][0]["holds"] = [hold]
+        assert self.facts(status)["waiting_hold"] is None
+        status["status"]["places"][0]["holds"] = {"on": "waiting"}
+        assert self.facts(status)["waiting_hold"] is None
+
+    def test_a_bound_of_another_shape_reads_none_and_the_hold_still_stands(self):
+        status = status_26("bolt-held")
+        status["status"]["places"][0]["holds"][0]["bound"] = "7d"
+        assert self.facts(status)["waiting_hold"] == {
+            "words": "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay", "since": 1794700300, "bound": None}
+
+
 FLUME_19 = pathlib.Path(__file__).parent / "flume-0.19.0"
 Y = "/Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y"
 Y_FIX = "/Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1"
