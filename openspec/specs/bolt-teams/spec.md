@@ -237,6 +237,10 @@ The first act on any host to read a bolt whose landing is decided SHALL record i
 - **WHEN** the runner's report has `z`'s submission `#412` with the verdict conflict
 - **THEN** the next read records `z`'s landing refused at its head in Flume's words, appends its take-main fix, and raises its kit's landings card with `z`'s row saying it takes main first
 
+#### Scenario: A stop recorded by a later read
+- **WHEN** the runner's branch carries `z`'s land refused, a place on `bolt/z` being live, and no read has recorded it
+- **THEN** the next read records `z`'s landing stopped in those words, asks main-level ops, and raises `z`'s kit's landings card; a read inside that card's raise raises none, and a second read records and raises nothing
+
 #### Scenario: A runner that can't be read
 - **WHEN** the branch of the runner that took `z`'s launch can't be read
 - **THEN** the read records nothing for `z`, and names that runner as one it could not read
