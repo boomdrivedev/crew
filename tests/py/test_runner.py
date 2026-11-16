@@ -94,7 +94,7 @@ class TestRequests:
         assert runner.request_refusal(have, rec(2, "drop", Of=1, Words="Gone.", Stream="madswan")) == (
             "drop 2 for unit/a carries Stream, Words, which a drop does not take")
         assert runner.request_refusal([], rec(1, "reorder")) == (
-            "request 1 is a reorder, and a request is a launch, a retry, a drop, a priority, a land, a preview or a confirm")
+            "request 1 is a reorder, and a request is a launch, a retry, a drop, a priority, a land, a preview, a confirm or a hold")
 
     def test_the_work_is_named_as_crew_names_it(self):
         for work in ("bolt/b", "unit/a", "chore/bump", "fix/b/tidy", "fix/main/crew/red", "role/design/record-0053"):
