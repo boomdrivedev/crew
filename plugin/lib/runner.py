@@ -1658,7 +1658,7 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None):
     main's naming its work fix/main/<kit>/<name> as work; sent, {a row's work: (the card whose send ticked it, the head
     it ticked)}, for each row a send stands for, the card's answer's and an earlier one's (landings_sent); requests,
     requests.rec's records; reads, the drive's runners as crew read them; posted, the lands crew recorded posting,
-    [{work, card, head, request}] (lands_posted); work, each bolt's own work between the head ticked and its head now
+    [{work, card, head, request, waited}] (lands_posted), waited marking one the run record holds recorded waiting; work, each bolt's own work between the head ticked and its head now
     where it moved (bolt_work), by which the send still stands (send_stands). Returns [(work, the launch's number)] in
     the card's order with the fixes of main first, one for each row whose box is ticked on a send that stands for it at
     its head now, that can land (a box), whose launch stands, and none of whose lands was posted at its head now nor
@@ -1666,13 +1666,18 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None):
     was stopped, the send then spent; but a land stopped at its head now, its last, posted on proof or on another send,
     bars no send's land there, since a stop is nothing of the bolt's and no fix moves its head, so only a send can land
     it (rail-cards "A landings row is due one land for each send and head" as a-proven-bolt-lands-on-proof modifies it,
-    Decision 3); a bolt started before bolts were base places, with no launch of its own, none.
+    Decision 3); a bolt started before bolts were base places, with no launch of its own, none. No land is due while
+    Flume's status of the bolt's base place names a place on its branch (landing_of's places), on a send or on proof,
+    since Flume refuses the base place's retry meanwhile (flume 203); the send stands, and a land that waited on such
+    places is no land posted at its head and spends no send, so the first raise after Flume names none posts it again
+    (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decisions 2 and 4).
     The rows due a land on proof come as a send of their own, keyed by no card, {work: (None, its head now)}
     (a-proven-bolt-lands-on-proof, Decision 1), so the same rules hold of them: one land for each head, none while one
     stands undecided or unknown, none after a stop at that head, the land posted there; a stop at an old head holds
     nothing at a new one, a stopped land on proof holding its row only at the head it was posted at."""
     work, due = work or {}, []
     posted = list(posted)
+    waited = {str(p.get("request")) for p in posted if p.get("waited")}
     for r in sorted(rows, key=lambda r: not (r.get("work") or "").startswith("fix/main/")):
         w = r.get("work") or f"bolt/{r['bolt']}"
         if not r.get("box") or w not in sent:
@@ -1684,10 +1689,10 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None):
         launch = launch_of(requests, w)
         if launch is None:
             continue
-        mine = [p for p in posted if p.get("work") == w]
+        mine = [p for p in posted if p.get("work") == w and not p.get("waited")]
         here = [p for p in mine if p.get("head") and head and (head.startswith(p["head"]) or p["head"].startswith(head))]
-        l = landing_of(launch, lands_of(requests, launch), reads)
-        if l["outcome"] in ("asked", "submitted", "unknown", "unlaunched", "landed", "dropped"):
+        l = landing_of(launch, lands_of(requests, launch), reads, waited)
+        if l["outcome"] in ("asked", "submitted", "unknown", "unlaunched", "landed", "dropped", "waiting") or l.get("places"):
             continue
         if l["outcome"] == "stopped" and card is not None:
             # every land posted at this head is decided, the last stopped: one this send posted spends it, at this head

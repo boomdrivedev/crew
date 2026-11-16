@@ -2538,6 +2538,37 @@ class TestLandsDue:
         assert self.due([box("y", H2)], {"bolt/y": ("req_1", H1[:7])}, requests, reads, posted, work={"y": work()}) == []
         assert self.due([box("y", H2)], {"bolt/y": ("req_2", H2[:7])}, requests, reads, posted) == [("bolt/y", 1)]
 
+    def test_no_land_on_a_send_or_on_proof_while_flume_names_a_place_on_the_branch(self):
+        """bolt-teams "A place on the branch at the send" and "A land due on proof" (a-land-waits-while-a-place-on-its-
+        bolts-branch-is-live, Decision 2): Flume's status of y's base place names fix--y-notes on bolt/y, a place no launch
+        of crew's made, so no land of y is due on the user's send nor on proof, while z beside it, its status naming no
+        place, is; once Flume names none, y's is due on the same send."""
+        place = self.reads(launched={1: "flume-0.19.0/bolt-place-on-branch"})
+        sent = {"bolt/y": ("req_1", H1[:7]), "bolt/z": ("req_1", H1[:7])}
+        assert self.due(self.rows("y", "z"), sent, reads=place) == [("bolt/z", 2)]
+        assert self.due(self.rows("y"), {"bolt/y": (None, H1[:7])}, reads=place) == []
+        clear = self.reads(launched={1: "flume-0.19.0/bolt-forecast-fixed"})
+        assert self.due(self.rows("y", "z"), sent, reads=clear) == [("bolt/y", 1), ("bolt/z", 2)]
+        assert self.due(self.rows("y"), {"bolt/y": (None, H1[:7])}, reads=clear) == [("bolt/y", 1)]
+
+    def test_a_land_that_waited_is_due_again_on_its_send_and_head_once_no_place_is_named(self):
+        """bolt-teams "A land that waited is posted again once no place on its branch is live" and rail-cards "A landings
+        row is due one land for each send and head" (Decision 4): land 5 of y, posted on the send of req_1 at abc1234, was
+        refused while Flume named fix--y-1 and is recorded waiting; y-1 has landed and Flume names no place, so the same
+        send is due y's land again, at abc1234 or at def5678 where y's own work is unchanged, and nothing where its own work
+        changed; the same refusal recorded as no wait is a stop that spent the send."""
+        from test_runner import rec
+        requests = self.requests(rec(5, "land", "bolt/y", Of=1))
+        posted = [dict(work="bolt/y", card="req_1", head=H1[:7], request="5", waited=True)]
+        reads = self.reads(launched={1: "flume-0.19.0/bolt-forecast-fixed"}, refused={5: "flume refused the retry: fix--y-1 is live (203)"})
+        sent = {"bolt/y": ("req_1", H1[:7])}
+        assert self.due([box("y")], sent, requests, reads, posted) == [("bolt/y", 1)]
+        assert self.due([box("y", H2)], sent, requests, reads, posted, work={"y": work()}) == [("bolt/y", 1)]
+        assert self.due([box("y", H2)], sent, requests, reads, posted, work={"y": work([LEASE])}) == []
+        assert self.due([box("y")], {"bolt/y": (None, H1[:7])}, requests, reads, posted) == [("bolt/y", 1)]
+        stopped = [dict(posted[0], waited=False)]
+        assert self.due([box("y")], sent, requests, reads, stopped) == []
+
     def test_a_bolt_started_before_bolts_were_base_places_posts_nothing(self):
         """It has no launch of its own, and its row no box (rail-cards "A bolt started before bolts were base places has
         no box"); a box given it all the same posts nothing."""
