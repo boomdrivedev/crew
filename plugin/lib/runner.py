@@ -1446,6 +1446,60 @@ def base_facts(launch, reads):
     return flume_facts(place["status"], place["place"]) if place is not None and not place.get("why") else None
 
 
+# How long a hold crew posts of a waiting bolt's base place holds, in seconds: seven days, so a hold posted again at the
+# first read past half of it holds while any read falls between three and a half and seven days after the last post,
+# a quiet weekend among them (Decision 3 of a-bolt-waiting-on-the-user-waits-under-words).
+HOLD_BOUND = 604800
+# The words of the hold of bound 0 that ends crew's own once its bolt waits on nothing of the user's, which Flume lets
+# lapse at once, so the place's stall says something again (Decision 4 of a-bolt-waiting-on-the-user-waits-under-words).
+HOLD_ENDED = "crew ends its hold: the bolt waits on nothing of the user's"
+
+
+def hold_requests(requests, launch):
+    """The hold requests of a launch (Decision 3 of a-bolt-waiting-on-the-user-waits-under-words), in requests.rec's
+    order: each hold whose Of names it."""
+    n = launch.get("Request") if launch is not None else None
+    return [r for r in requests if r.get("Act") == "hold" and n is not None and r.get("Of") == n]
+
+
+def hold_due(launch, words, requests, reads, now):
+    """The hold due of a bolt's base place, from plain facts (Decisions 3 and 4 of
+    a-bolt-waiting-on-the-user-waits-under-words; code.7): launch, the newest launch not dropped of bolt/<bolt>
+    (launch_of); words, crew's words of what the bolt waits on the user for (plan.wait_words), None where it waits on
+    nothing of theirs; requests, requests.rec's records; reads, the drive's runners as crew read them (host_read's, by
+    host); now, seconds since the epoch, as Flume's since is. Returns ("hold", words) where the place waits on crew
+    under no hold with those words, or under one with half its bound or less left, or lapsed; ("end", HOLD_ENDED)
+    where it waits on nothing of the user's and the hold standing on the place's waiting move has the words of the
+    newest hold crew posted of the launch, not itself an end; else None: for no launch, one no runner crew read has
+    taken or one crew can't tell (read.1), while a hold of it has no answer from the runner that took it, so a runner
+    that does not carry holds is asked once, while a land of it is asked or submitted, the move made, and while Flume's
+    status of the place, as the runner carried it, gives no move it waits on its caller for, since Flume refuses a hold
+    of a place that waits on none."""
+    if launch is None:
+        return None
+    reading, why = taken(reads, number(launch.get("Request")))
+    if why or reading is None:
+        return None
+    holds = hold_requests(requests, launch)
+    if any(number(h.get("Request")) not in reading["answers"] for h in holds):
+        return None
+    if landing_outcome(launch, lands_of(requests, launch), reads)["outcome"] not in ("none", "stopped"):
+        return None
+    f = base_facts(launch, reads)
+    if f is None or not f["waiting"]:
+        return None
+    standing = f["waiting_hold"]
+    if words is not None:
+        held = (standing is not None and standing["words"] == words and standing["bound"] is not None
+                and standing["since"] + standing["bound"] - now > standing["bound"] // 2)
+        return None if held else ("hold", words)
+    newest = holds[-1] if holds else None
+    if (newest is not None and standing is not None and standing["words"] == newest.get("Words")
+            and (number(newest.get("Bound")) or 0) > 0):
+        return ("end", HOLD_ENDED)
+    return None
+
+
 def landing_fix(f):
     """A bolt's landing fix as Flume holds it on its base place (crews-bolt-kind-names-its-landing-fix, Decision 3), from
     plain facts (code.7): f, Flume's status of the base place (flume_facts). None where f names no fix kind, so Flume
