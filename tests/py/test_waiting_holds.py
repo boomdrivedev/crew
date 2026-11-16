@@ -7,6 +7,7 @@ as the runner carried it (runner.hold_due), on flume 0.26.0's shapes (tests/py/f
 import pytest
 
 from facts import ran
+import crew
 import plan
 import runner
 
@@ -222,3 +223,116 @@ class TestWaitWords:
     def test_no_words_for_none_or_unknown(self):
         assert self.words({"on": "none"}) is None
         assert self.words({"on": "unknown", "why": "its verification can't be read"}) is None
+
+
+# swancloud's plan at the write's tip: y of crew, not marked to stay, and z of crew, marked.
+PLAN = "%rec: Bolt\n\nBolt: y\nRepo: crew\nPath: flume\n\nBolt: z\nRepo: crew\nPath: flume\nStays: yes\n\n%rec: Unit\n\n"
+HEAD = "abc1234" + "0" * 33
+BATCH = "the user, by answering review batch 5 on its card, batch/5"
+
+
+def launches():
+    """requests.rec's records as the read found them: request 1 the launch of bolt/y, request 2 bolt/z's."""
+    return [plan.Rec("Request", runner.request_fields(n, "launch", f"bolt/{b}", dict(BOLT, Name=b, Intent=f"swancloud/{b}",
+                                                                                      Recipient="swancloud/ops"), AT, BY))
+            for n, b in ((1, "y"), (2, "z"))]
+
+
+def item(bolt, form, words, stays=False, hold=None, launch=None, bound=None):
+    """A hold due as sweep_waits hands holds_post it."""
+    return dict(bolt=bolt, kit="crew", launch=launch or {"y": "1", "z": "2"}[bolt], head=HEAD, form=form, words=words,
+                bound=runner.HOLD_BOUND if bound is None else bound, stays=stays, hold=hold)
+
+
+Y_BATCH, Z_SEND = item("y", "batch", BATCH), item("z", "send", SEND, stays=True)
+Y_END = item("y", "end", runner.HOLD_ENDED, bound=0)
+
+
+class TestHoldsWrite:
+    """plan.holds_change: the holds due posted by one plan write in ops's name, re-checked at its tip, each a hold request
+    recorded as a bolt.hold entry with its request, head and form and none of its words, an end a hold of bound 0
+    (design Decisions 4, 5 and 6; bolt-teams "The rail's read posts the holds due by one plan write in ops's name";
+    run-record "A hold crew posts is one entry naming its request and what the bolt waits on")."""
+
+    @pytest.fixture(autouse=True)
+    def writer(self, monkeypatch):
+        monkeypatch.setenv("CREW_AGENT", "swancloud-ops")
+        monkeypatch.setattr(crew, "this_host", lambda: "mac-studio")
+
+    def write(self, text=PLAN, more=()):
+        """A write at a tip holding text as its plan and the read's launches, then more, in requests.rec."""
+        from facts import FactsWrite
+        rs = launches() + list(more)
+        return FactsWrite(text, files={"requests.rec": runner.REQUESTS + "".join("\n" + "\n".join(r.lines()) + "\n" for r in rs)},
+                          label="swancloud")
+
+    def posted(self, w):
+        return [(r.get("Request"), r.get("Act"), r.get("Work"), r.get("Of"), r.get("Words"), r.get("Bound"), r.get("Host"))
+                for r in plan.Plan(w.files["requests.rec"]).recs("Request")[2:]]
+
+    def test_two_holds_are_one_write_in_ops_name_each_with_its_entry(self):
+        """bolt-teams, Two bolts at once; run-record, Two holds in one write and A hold of a bolt marked to stay."""
+        w = self.write()
+        got = plan.holds_change(w, "swancloud", [Y_BATCH, Z_SEND], launches())
+        assert got == [dict(label="swancloud", bolt="y", request=3, form="batch"), dict(label="swancloud", bolt="z", request=4, form="send")]
+        assert self.posted(w) == [("3", "hold", "bolt/y", "1", BATCH, "604800", None), ("4", "hold", "bolt/z", "2", SEND, "604800", None)]
+        assert all(r.get("By") == "swancloud-ops" for r in plan.Plan(w.files["requests.rec"]).recs("Request")[2:])
+        assert (w.act, w.on, w.fields) == ("bolt.hold", ["bolt/y"], dict(Request="3", Head=HEAD, Form="batch"))
+        (_, act, on, fields), = w.also
+        assert (act, on, fields) == ("bolt.hold", ["bolt/z"], dict(Request="4", Head=HEAD, Form="send"))
+        assert not any(BATCH in str(v) or SEND in str(v) for v in [*w.fields.values(), *fields.values()])
+        assert w.subject == "plan(swancloud): hold y and z while waiting on the user"
+
+    def test_an_end_is_a_hold_of_bound_zero_recorded_as_an_end(self):
+        """bolt-teams, The bolt no longer waits on the user; run-record, An end."""
+        w = self.write()
+        assert plan.holds_change(w, "swancloud", [Y_END], launches()) == [dict(label="swancloud", bolt="y", request=3, form="end")]
+        assert self.posted(w) == [("3", "hold", "bolt/y", "1", runner.HOLD_ENDED, "0", None)]
+        assert (w.act, w.fields["Form"], w.subject) == ("bolt.hold", "end", "plan(swancloud): end crew's hold of y")
+        w = self.write()
+        plan.holds_change(w, "swancloud", [Z_SEND, Y_END], launches())
+        assert w.subject == "plan(swancloud): hold z while waiting on the user; end crew's hold of y"
+
+    def test_a_land_or_hold_appended_since_the_read_posts_nothing_for_its_bolt(self):
+        """bolt-teams, A land posted in the same read: the raise posted z's land on the send before the holds' write;
+        and a hold of y appended by another read since."""
+        land = plan.Rec("Request", runner.request_fields(3, "land", "bolt/z", dict(Of=2), AT, BY))
+        w = self.write(more=[land])
+        assert plan.holds_change(w, "swancloud", [Y_BATCH, Z_SEND], launches()) == [dict(label="swancloud", bolt="y", request=4, form="batch")]
+        assert [r[:4] for r in self.posted(w)] == [("3", "land", "bolt/z", "2"), ("4", "hold", "bolt/y", "1")]
+        held = plan.Rec("Request", runner.request_fields(3, "hold", "bolt/y", dict(Of=1, Words=BATCH, Bound=runner.HOLD_BOUND), AT, BY))
+        w = self.write(more=[held])
+        assert [g["bolt"] for g in plan.holds_change(w, "swancloud", [Y_BATCH, Z_SEND], launches())] == ["z"]
+        w = self.write(more=[held])
+        assert [g["bolt"] for g in plan.holds_change(w, "swancloud", [Y_BATCH, Z_SEND], launches() + [held])] == ["y", "z"]
+
+    def test_a_hold_on_the_kit_put_or_lifted_since_the_read_posts_nothing_for_its_bolts(self):
+        """bolt-teams, A hold put between the read and the write: the next read posts the words naming the hold."""
+        for tip in (PLAN + "%rec: Hold\n\nKit: crew\nWhy: Cutover\n", PLAN + "%rec: Hold\n\nWhy: Cutover\n"):
+            with pytest.raises(plan.Unposted):
+                plan.holds_change(self.write(tip), "swancloud", [Y_BATCH, Z_SEND], launches())
+        lifted = item("y", "hold", LIFT, hold=CUTOVER)
+        with pytest.raises(plan.Unposted):
+            plan.holds_change(self.write(), "swancloud", [lifted], launches())
+        changed = PLAN + "%rec: Hold\n\nKit: crew\nWhy: Freeze\n"
+        with pytest.raises(plan.Unposted):
+            plan.holds_change(self.write(changed), "swancloud", [lifted], launches())
+        still = PLAN + "%rec: Hold\n\nKit: crew\nWhy: Cutover\n"
+        assert [g["bolt"] for g in plan.holds_change(self.write(still), "swancloud", [lifted], launches())] == ["y"]
+
+    def test_a_bolt_gone_from_the_plan_or_whose_mark_changed_is_skipped(self):
+        gone = PLAN.replace("Bolt: y\nRepo: crew\nPath: flume\n\n", "")
+        assert [g["bolt"] for g in plan.holds_change(self.write(gone), "swancloud", [Y_BATCH, Z_SEND], launches())] == ["z"]
+        unmarked = PLAN.replace("Stays: yes\n", "")
+        assert [g["bolt"] for g in plan.holds_change(self.write(unmarked), "swancloud", [Y_BATCH, Z_SEND], launches())] == ["y"]
+        marked = PLAN.replace("Bolt: y\nRepo: crew\nPath: flume\n", "Bolt: y\nRepo: crew\nPath: flume\nStays: yes\n")
+        assert [g["bolt"] for g in plan.holds_change(self.write(marked), "swancloud", [Y_BATCH, Z_SEND], launches())] == ["z"]
+
+    def test_nothing_left_writes_nothing(self):
+        w = self.write(PLAN.replace("Bolt: y\nRepo: crew\nPath: flume\n\n", ""))
+        text = w.files["requests.rec"]
+        with pytest.raises(plan.Unposted):
+            plan.holds_change(w, "swancloud", [Y_BATCH], launches())
+        assert w.files["requests.rec"] == text and (w.act, w.also, w.on) == (None, [], [])
+        with pytest.raises(plan.Unposted):
+            plan.holds_change(self.write(), "swancloud", [], launches())

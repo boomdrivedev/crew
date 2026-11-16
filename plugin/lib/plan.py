@@ -3901,6 +3901,59 @@ def lands_post(fleet, label, kit, owner, rows, sent, reads, work=None, proof=Fal
     return posted
 
 
+def holds_change(w, label, due, requests):
+    """The plan write that posts the holds due of bolts waiting on the user (Decisions 4, 5 and 6 of
+    a-bolt-waiting-on-the-user-waits-under-words; bolt-teams "The rail's read posts the holds due by one plan write in
+    ops's name"), applied to w at its tip: each item of due, {bolt, kit, launch, head, form, words, bound, stays, hold},
+    re-checked there (plan.1), skipped where the plan no longer holds its bolt, its Stays mark or the hold on its kit or
+    drive (hold_on) differs from those its words were made under, or its launch has a land or a hold at the tip that the
+    read's requests lacked; each one left a hold request of its launch with its words and bound, and an entry,
+    bolt.hold on bolt/<bolt>, carrying the hold's Request, the bolt's Head and its Form (send, hold, batch, or end for a
+    hold of bound 0 that ends crew's own) and none of its words (record.3), the first the write's own act and the rest
+    written with it (Write.also). Raises Unposted where none is left. Returns [{label, bolt, request, form}]."""
+    read = {r.get("Request") for r in requests}
+    tip = requests_of(w).recs("Request")
+    out = []
+    for d in due:
+        b = w.plan.bolt(d["bolt"])
+        if b is None or (b.get("Stays") == "yes") != bool(d["stays"]) or hold_on(w.plan, d["kit"]) != d["hold"]:
+            continue
+        if any(r.get("Act") in ("land", "hold") and r.get("Of") == str(d["launch"]) and r.get("Request") not in read for r in tip):
+            continue
+        work = f"bolt/{d['bolt']}"
+        m = request(w, "hold", work, Of=d["launch"], Words=d["words"], Bound=d["bound"])
+        fields = dict(Request=str(m), Head=d["head"], Form=d["form"])
+        if not out:
+            w.act, w.fields = "bolt.hold", dict(w.fields, **fields)
+            w.on.append(work)
+        else:
+            w.also.append((record.new_id(), "bolt.hold", [work], fields))
+        out.append(dict(label=label, bolt=d["bolt"], request=m, form=d["form"]))
+    if not out:
+        raise Unposted()
+    held = [o["bolt"] for o in out if o["form"] != "end"]
+    ended = [o["bolt"] for o in out if o["form"] == "end"]
+    w.subject = f"plan({label}): " + "; ".join(([f"hold {joined(held)} while waiting on the user"] if held else [])
+                                                + ([f"end crew's hold of {joined(ended)}"] if ended else []))
+    return out
+
+
+def holds_post(fleet, label, owner, due, requests):
+    """The holds due of bolts waiting on the user (holds_change), posted by one plan write in main-level ops's name:
+    [{label, bolt, request, form}] posted, [] where none is left at the tip, nothing written. A write refused raises
+    its Refusal."""
+    posted = []
+
+    def change(w):
+        posted[:] = holds_change(w, label, due, requests)
+        return []
+    try:
+        write(fleet, label, change, f"plan({label}): hold bolts waiting on the user", act="bolt.hold", by=owner)
+    except Unposted:
+        return []
+    return posted
+
+
 def fix_row(kit, f):
     """A fix of a kit's main as a row of its landings card (crew-lands-each-bolt-through-flumes-base-place, Decision 5;
     crew-rail "A delivered fix of main is a line of its kit's landings row, sent as a bolt's is"), from runner.main_fixes_waiting's f: its row's name
@@ -13671,6 +13724,11 @@ class CardActs:
         """The lands the user's send makes due, or with proof those due on proof, posted by one plan write (lands_post):
         [(work, request, head)]."""
         return lands_post(self.fleet, label, kit, owner, rows, sent, reads, work, proof)
+
+    def post_holds(self, label, owner, due, requests):
+        """The holds due of bolts waiting on the user, posted by one plan write in ops's name (holds_post): [{label,
+        bolt, request, form}]."""
+        return holds_post(self.fleet, label, owner, due, requests)
 
     def forecast(self, label, kit, bolts, held=()):
         """The forecasts of a kit's landings card's rows (forecast_rows)."""
