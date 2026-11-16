@@ -16,7 +16,7 @@ crew's manifest),
 tests/run, tests/slot, tests/lib.sh, tests/stubs/, crew's toolchain files, the test file itself and each path the test
 names on a `# Reads:` line of its opening comment (a directory as everything under it). The rest of plugin/ is a
 test's input only when it names it: plugin/hooks when it starts an agent, since the stub claude runs the
-session-start hook; plugin/roles when it reads a brief's words; board.py, page.py, page.html and sites.py when it
+session-start hook; plugin/roles when it renders a brief; board.py, page.py, page.html and sites.py when it
 runs them. moon replays a task whose inputs are unchanged since a pass, so an input left out could replay a stale
 pass; crew's policy takes no replay (.config/sluice.toml), so sluice runs every test afresh on each submission,
 whatever the archives hold.
