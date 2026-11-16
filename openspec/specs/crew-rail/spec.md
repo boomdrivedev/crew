@@ -108,11 +108,15 @@ A bolt whose kit's read says it carries another bolt's work that main lacks SHAL
 - **THEN** its line says it can land
 
 ### Requirement: A row whose card the user answered says whose act it waits on
-When the run record holds the user's answer on a row's open card, the row's card line SHALL say the card was answered, when, what was answered in crew's words, and the act it now waits on, never that it is open and asked: for a kit's landings card, the runner's landing of what the user ticked, which crew's raise asks of it; for any other card, the act of the row's owner.
+When the run record holds the user's answer on a row's open card, the row's card line SHALL say the card was answered, when, what was answered in crew's words, and the act it now waits on, never that it is open and asked: for a kit's landings card, the runner's landing of each bolt the user ticked that has neither landed nor had its land on that send stopped; for any other card, the act of the row's owner.
 
 #### Scenario: A landings card the user sent
 - **WHEN** `land/sluice`'s card `req_e9` is open and the run record holds the user's answer on it at 22:01, ticking `a` and `b`
 - **THEN** the land row's card line says `land/sluice` was answered at 22:01, ticking `a` and `b`, and waits on the runner to land them, and does not say `open, asked by`
+
+#### Scenario: A landings card some of whose bolts landed or were stopped
+- **WHEN** the user's answer on `land/sluice`'s card ticked `a`, `b` and `c`, `a` has landed and the runner stopped the land of `b` that send posted
+- **THEN** the land row's card line says it waits on the runner to land `c`, and once `c` lands, that crew's next raise closes it
 
 #### Scenario: A proposal's card approved on the phone
 - **WHEN** `proposal/57`'s card is open and the run record holds the user's answer on it, approved
@@ -142,7 +146,7 @@ An open question or decision record card whose answer the run record holds SHALL
 - **THEN** the rail lists it under the answered cards waiting on their askers, naming agentplot-design, and not under the decision records waiting on the user
 
 ### Requirement: Each bolt's land line says whether its card carries, holds or follows it
-Each bolt line on a kit's land row SHALL end what it waits on with how the kit's card stands for it: carried, when the open card waiting on the user shows it as a row; held, when the user's send stands for it at its head now; or following, when it can land and neither holds. A bolt that can't land and is no row of the card SHALL say nothing of the card.
+Each bolt line on a kit's land row SHALL end what it waits on with how the kit's card stands for it: carried, when the open card waiting on the user shows it as a row; held, when the user's send stands for it at its head now and no land of it that send posted was stopped; or following, when it can land and neither holds. A bolt that can't land and is no row of the card SHALL say nothing of the card.
 
 #### Scenario: A bolt the open card carries
 - **WHEN** `land/crew`'s card waits on the user and its last post shows `b` at its head now
@@ -155,6 +159,10 @@ Each bolt line on a kit's land row SHALL end what it waits on with how the kit's
 #### Scenario: A bolt the user's send holds
 - **WHEN** the user answered `land/crew`'s card ticking `b` at its head now, and no land of `b` is posted yet
 - **THEN** `b`'s line says the user's send on `land/crew` holds it and crew asks the runner to land it on that send
+
+#### Scenario: A bolt whose land on the send was stopped
+- **WHEN** the user answered `land/crew`'s card ticking `b` at its head now, and the runner stopped the land of `b` that send posted
+- **THEN** `b`'s line says it follows: the card after `land/crew`'s answered one carries it, and not that the user's send holds it
 
 #### Scenario: A send kept on a closed card
 - **WHEN** `land/crew`'s answered card closed keeping the user's send for `b`, held taking main in, and `b` reads proven again at a head whose own work is the same

@@ -2958,6 +2958,17 @@ def stop_spends(by, card):
     return by is None or (by != "proof" and by == card)
 
 
+def send_spent(entries, card, bolts):
+    """The bolts of bolts, those the user's send on a kit's landings card (card, its id) ticked, whose last landing was a
+    land that send posted and the runner or Flume stopped, nothing of the bolt's (stops, stopped_by, stop_spends), from
+    the run record's entries, oldest first: {bolt: (head, words)}, the head that land carried and what stopped it. The
+    send is spent for such a bolt at that head or any (runner.lands_due), so it no longer waits on the runner to land it:
+    the card closes naming it, and the card that follows asks for it again (rail-cards "An answered landings card closes
+    once each bolt it ticked has landed, been held or stopped"). A decision of facts alone (code.7)."""
+    stopped = stops(entries)
+    return {b: stopped[b] for b in bolts if b in stopped and stop_spends(stopped_by(entries, b, stopped[b][0]), card)}
+
+
 def stopped_at(stopped, bolt, head):
     """What stopped the bolt's last landing, in the words it was recorded with, when it was stopped at head, from the
     stops already read ({bolt: (head, words)}, stops), or None: one stopped at another head says nothing, the bolt's
@@ -3326,8 +3337,10 @@ def landings_step(rows, card, ticked, in_plan, landed=None, note=None, work=None
     ("follow", outcome, left, landing) when one does, a bolt on no row of the card, at a head the card did not show
     whose send does not stand, or shown with no box (card's next), which is never added to the card they answered and
     never one they left: it is closed saying what landed, which rows had no box on it, what
-    their send still lands, each whose last landing at its head sluice or its host stopped with what stopped it (its
-    row's stopped, landing_rows), which holds nothing, what takes main in first, what was held and what was left, a
+    their send still lands, each ticked whose land on their send the runner or Flume stopped with what stopped it (its
+    row's stopped: landing_rows' at its head now, or, as the raise gives it, at the head that land carried, the send
+    spent at any head), which holds nothing, its stop said only where its head did not move past the send, what takes
+    main in first, what was held and what was left, a
     row the card showed taking main first and left unticked being no bolt they left, and what changed of a ticked bolt
     asked again (work_said), and a new card follows it with every row that can land but
     those their send still lands (landing, each (bolt, the head they ticked), a held one whose send stands among them);
@@ -3415,7 +3428,7 @@ def landings_step(rows, card, ticked, in_plan, landed=None, note=None, work=None
              [f"Asked of the runner as you ticked: {joined(lands)}."]) if lands else []
     stopped = {r["bolt"]: r["facts"]["stopped"] for r in boxed if r["facts"].get("stopped")}
     said += [f"{b}'s landing at {stopped[b][0][:7]} was stopped, nothing of the bolt's: {stopped[b][1].rstrip('.')}; your send of "
-             "it is spent, and the card that follows asks for it again." for b in ticked if b in spent]
+             "it is spent, and the card that follows asks for it again." for b in ticked if b in spent and b not in moved]
     said += [f"Taking main in first, your send standing for it: {joined([b for b in landing if b in main_first])}."] if len(lands) < len(landing) else []
     said += [f"Held: {b}, {held[b]}; your send stands for it: it lands once a fix on it has only taken main in and "
              "it reads proven at its new head, with nothing asked." if b in standing else
@@ -4162,9 +4175,18 @@ def landings_raised(fleet, label, kit, acts, note, dead):
     ids = {e["Id"] for e in whole if e.get("Id")}
     landing_told = told_on(whole + [e for e in acts.entries(label) if not e.get("Id") or e["Id"] not in ids], key, owner, kit)
     # the step reads a stop of a land on proof or on another card's send as no stop of this card's send, so the user's
-    # send of the row lands it, or stands under a hold, rather than reading spent
-    step = landings_step([dict(r, facts={k: v for k, v in r["facts"].items() if k != "stopped"}) if r["bolt"] in unspent
-                          else r for r in rows], state, ticked, in_plan, landed, note, work, landing_told,
+    # send of the row lands it, or stands under a hold, rather than reading spent; and it reads a stop of a land this
+    # card's send posted as spending that send at any head, as runner.lands_due does, so a bolt whose head moved since
+    # its stop closes the card too, rather than holding it open for a land the send will never post again (send_spent)
+    spent = send_spent(record_now, card, ticked or []) if (state or {}).get("status") == "answered" else {}
+
+    def stepped(r):  # the row as the step reads its stop
+        if r["bolt"] in unspent:
+            return dict(r, facts={k: v for k, v in r["facts"].items() if k != "stopped"})
+        if r["box"] and not r.get("work") and r["bolt"] in spent and not r["facts"].get("stopped"):
+            return dict(r, facts=dict(r["facts"], stopped=spent[r["bolt"]]))
+        return r
+    step = landings_step([stepped(r) for r in rows], state, ticked, in_plan, landed, note, work, landing_told,
                          f"the hold on {held_named(label, hold['kit'])}" if hold else None)
     try:
         t = kit_at(fleet, label, kit)
@@ -4939,8 +4961,9 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     name and acted on, each outcome by a write of its own (landing_record). A landing then closes the bolt
     (landing_close), with card False leaving its kit's card to the raise that read it. The read that records a refusal
     or a stop asks main-level ops where it runs as its kind, keyed by the land's
-    request (unlanded_ask); a conflict launches the take-main fix on the bolt, once however often it is read
-    (take_main_launch). Where the bolt's base place names a landing fix (runner.landing_way;
+    request (unlanded_ask), and, card True, raises the bolt's kit's landings card, which closes an answered card once
+    each bolt it ticked has landed, been held or stopped (unheld_raise); a conflict launches the take-main fix on the
+    bolt, once however often it is read (take_main_launch). Where the bolt's base place names a landing fix (runner.landing_way;
     crews-bolt-kind-names-its-landing-fix, Decision 4), a refusal whose way on is Flume's, its landing fix live, landed
     or due, launches nothing and asks nothing, and one whose way on is its caller's, past the bound or its fix dropped
     or not launched, asks ops in Flume's words (runner.caller_said) and launches nothing. Each record is decided at the tip its write is applied to, so two reads at once record once.
@@ -4975,13 +4998,31 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
             landing_close(fleet, label, bolt, l, entries, card)
         return True, said
     by = (l.get("fix") or {}).get("by", "crew")  # whose a refusal's way on is (runner.landing_way)
-    if l["outcome"] in ("refused", "stopped") and landing_record(fleet, label, bolt, l, said, ops) and (
-            l["outcome"] == "stopped" or by in ("crew", "caller")):
+    recorded = l["outcome"] in ("refused", "stopped") and landing_record(fleet, label, bolt, l, said, ops)
+    if recorded and (l["outcome"] == "stopped" or by in ("crew", "caller")):
         unlanded_ask(fleet, label, bolt, kit_name, landing_request(entries, bolt, l),
                      runner.caller_said(l, bolt) if l["outcome"] == "refused" and by == "caller" else said)
     if l["outcome"] == "refused" and l.get("why") == "conflict" and by == "crew":
         take_main_launch(fleet, label, None, bolt, (l.get("main") or "", l.get("words") or "", l.get("request")))
+    if recorded and card:  # its kit's card raised on what was recorded, which closes an answered card at a stop (unheld_raise)
+        unheld_raise(fleet, label, bolt, launch)
     return False, said
+
+
+def unheld_raise(fleet, label, bolt, launch):
+    """The raise of a bolt's kit's landings card (land_hand) by the read that recorded the bolt's landing refused or
+    stopped (landing_read), so an answered card closes once each bolt it ticked has landed, been held or stopped, the
+    card that follows asking for a stopped bolt again, with no read of main-level ops's needed (rail-cards "An answered
+    landings card closes once each bolt it ticked has landed, been held or stopped"): the kit the plan names for the
+    bolt, else its launch's repository. A read inside a raise (card False) raises none, the raise that read it acting on
+    it; a plan that can't be read is said, raising nothing (read.1)."""
+    pl = plan_of(fleet, label)
+    if pl is None:
+        print(f"bolt/{bolt}: its kit's landings card is not raised: {label}/main could not be read", file=sys.stderr)
+        return
+    kit = ((pl.bolt(bolt) or Rec("Bolt", [])).get("Repo") or launch.get("Repo") or "").split("/")[-1]
+    if kit:
+        land_hand(fleet, label, kit)
 
 
 def landing_on_main(fleet, label, bolt, run, entries=None):
@@ -10489,11 +10530,14 @@ def record_reading(l, entries, plan, fresh, missing=None, crossed=None):
                                      by=e.get("By"), host=e.get("Host")))
     settled = batch_settled(entries)
     closed = {k for k in closed if not k.startswith("batch/")} | batch_closed(entries) | set(settled)  # a batch card posted again reopens its row
-    # each landings key's open card in ops's name, as its last post or change showed it, and the sends kept on its
-    # closed cards (landings_sent), which say how each bolt's card stands (card_stand)
+    # each landings key's open card in ops's name, as its last post or change showed it, with the bolts its answer ticked
+    # whose land on that send was stopped (send_spent), and the sends kept on its closed cards (landings_sent), which say
+    # how each bolt's card stands (card_stand)
     ops_cards = sorted((c for c in posted.values() if (c["key"] or "").startswith("land/") and c["by"] == f"{l}-ops"), key=lambda c: c["at"])
     land_cards = {c["key"]: dict(card=c["card"], heads=card_heads(shown_heads(entries, c["card"])),
-                                 taking=heads_taking(shown_heads(entries, c["card"])), answered=c.get("answered")) for c in ops_cards}
+                                 taking=heads_taking(shown_heads(entries, c["card"])), answered=c.get("answered"),
+                                 spent=set(send_spent(entries, c["card"], [b for b, _, _ in card_heads((c.get("answered") or {}).get("heads"))])))
+                  for c in ops_cards}
     sends = {k: landings_sent(entries, k, f"{l}-ops") for k in dict.fromkeys(
         e["Key"] for e in entries if e.get("Act") == "card.close" and (e.get("Key") or "").startswith("land/") and e.get("Heads"))}
     # each kit's bolts landed on proof still to be told on its landings card (told_on), and the form of each bolt's newest
@@ -10727,18 +10771,21 @@ def card_stand(bolt, head, can, card, sends):
     """How a kit's landings card stands for one bolt of its land row (crew-rail "Each bolt's land line says whether its
     card carries, holds or follows it", design Decision 8), from facts alone (code.7): the bolt, its head now and
     whether it can land; card, the open card under land/<kit> in main-level ops's name as record_reading keeps it, None
-    or {card, heads: [(bolt, head7, left)], taking, answered: {heads} or None}; sends, the sends kept on that key's
-    closed cards, landings_sent's {bolt: head}. ("carries", the head the card shows, or None when it shows the head now)
-    while the card waits on the user and shows the bolt as a row; ("holds",) when the card is answered and its answer
-    ticked the bolt, or a kept send names the bolt and no open card shows it, since a raise leaves out exactly the bolts
-    whose send stands (rows_unsent), so no git read is needed to agree with it; ("follows", whether the card that carries
-    it follows an answered one) when the bolt can land and neither holds; None for a bolt that can't land and is no row
-    of the card."""
+    or {card, heads: [(bolt, head7, left)], taking, answered: {heads} or None, spent}, spent the bolts its answer
+    ticked whose land that send posted was stopped (send_spent); sends, the sends kept on that key's closed cards,
+    landings_sent's {bolt: head}. ("carries", the head the card shows, or None when it shows the head now) while the card
+    waits on the user and shows the bolt as a row; ("holds",) when the card is answered and its answer ticked the bolt,
+    its land on that send not stopped, or a kept send names the bolt and no open card shows it, since a raise leaves out
+    exactly the bolts whose send stands (rows_unsent), so no git read is needed to agree with it; ("follows", whether
+    the card that carries it follows an answered one) when the bolt can land and neither holds, a bolt whose send a stop
+    spent among them, which the card that follows the answered one asks for again; None for a bolt that can't land and
+    is no row of the card."""
     shown = {b: h for b, h, _ in (card or {}).get("heads") or []}
     answered = (card or {}).get("answered")
     if card and not answered and bolt in shown:
         return ("carries", None if at_head(shown[bolt], head) else shown[bolt])
-    if answered and bolt in {b for b, _, _ in card_heads(answered.get("heads"))}:
+    if (answered and bolt in {b for b, _, _ in card_heads(answered.get("heads"))}
+            and bolt not in ((card or {}).get("spent") or ())):
         return ("holds",)
     if bolt in sends and bolt not in shown:
         return ("holds",)
@@ -10749,28 +10796,32 @@ def unoffered(rows, card, sends):
     """The rows of a kit's land row that its open landings card does not offer as they stand, for which the rail's read
     raises it (rail-cards "The rail's read raises a landings card that does not show a row as it stands"), from facts
     alone (code.7): rows, [(name, its head now or None, whether it can land)] of each bolt and fix of main the row
-    names; card, the card open under land/<kit> in main-level ops's name, {heads, taking, next, ticked}, heads its rows
-    as its last post or change recorded them (card_heads), taking those it showed taking main first (heads_taking),
-    next those it showed with no box (heads_next), ticked the bolts the user's answer on it ticked, or None while it
-    waits on them; sends, the sends kept on that key's closed cards (landings_sent's {bolt: head}). A row is held by a
-    send at its head now when the card's answer ticked it there, or a closed card's kept send names it there while this
-    card does not show it (card_stand's holds): its land is that send's to post, at the raise that read the answer. A
-    row is unoffered when it can land, no send holds it at its head now, and the card shows it on no row, at another
-    head than its head now, taking main first, or, once answered, with no box: a bolt proven since the card was posted
-    or answered, which a raise changes the waiting card for or follows the answered one with, or a bolt a send ticked
-    that reads proven at a new head, whose land the raise posts on that send while it stands for its work, else asks
-    for again (landings_step, lands_sent). A row the card shows as it stands, one the user left on their send among
-    them, is not, so a raise for it would change nothing. [names]"""
+    names; card, the card open under land/<kit> in main-level ops's name, {heads, taking, next, ticked, spent}, heads
+    its rows as its last post or change recorded them (card_heads), taking those it showed taking main first
+    (heads_taking), next those it showed with no box (heads_next), ticked the bolts the user's answer on it ticked, or
+    None while it waits on them, spent those it ticked whose land that send posted was stopped (send_spent); sends, the
+    sends kept on that key's closed cards (landings_sent's {bolt: head}). A row is held by a send at its head now when
+    the card's answer ticked it there, its land on that send not stopped, or a closed card's kept send names it there
+    while this card does not show it (card_stand's holds): its land is that send's to post, at the raise that read the
+    answer. A row is unoffered when it can land, no send holds it at its head now, and the card shows it on no row, at
+    another head than its head now, taking main first, or, once answered, with no box or ticked by a send a stop spent:
+    a bolt proven since the card was posted or answered, which a raise changes the waiting card for or follows the
+    answered one with, a bolt a send ticked that reads proven at a new head, whose land the raise posts on that send
+    while it stands for its work, else asks for again, or a bolt whose land on the send was stopped, which the raise
+    closes the card naming and the card following it asks for again (landings_step, lands_sent; rail-cards "An answered
+    landings card closes once each bolt it ticked has landed, been held or stopped"). A row the card shows as it
+    stands, one the user left on their send among them, is not, so a raise for it would change nothing. [names]"""
     shown = {b: h for b, h, _ in card.get("heads") or []}
     ticked, answered = set(card.get("ticked") or ()), card.get("ticked") is not None
     taking, waits = set(card.get("taking") or ()), set(card.get("next") or ())
+    spent = set(card.get("spent") or ()) & ticked
 
     def held(b, head):  # a send stands for the row at the head it was sent at, its head now; a fix of main by its name
-        at = shown.get(b) if b in ticked else sends.get(b) if b in sends and b not in shown else None
+        at = shown.get(b) if b in ticked and b not in spent else sends.get(b) if b in sends and b not in shown else None
         return at is not None and (not head or at_head(at, head))
     return [b for b, head, can in rows
             if can and not held(b, head)
-            and (b not in shown or head and not at_head(shown[b], head) or b in taking or answered and b in waits)]
+            and (b not in shown or head and not at_head(shown[b], head) or b in taking or answered and (b in waits or b in spent))]
 
 
 def stand_said(stand, kit, label, head):
@@ -10852,7 +10903,8 @@ def answered_cards(cards, unread, rows, logs):
 def answered_waits(c, entries):
     """Whose act a card the user answered now waits on, in crew's words (crew-rail "A row whose card the user answered
     says whose act it waits on", design Decision 3), by its key's kind, from the card (its owner, by, and its answer,
-    answered) and the drive's entries: a kit's landings card, ops's landing of the bolts the send ticked; a
+    answered) and the drive's entries: a kit's landings card, the runner's landing of the bolts the send ticked that
+    it still waits on (ticked_waits), or, once none is, crew's raise, which closes it; a
     proposal, the planner's apply once approved or ticked, else its act on it; a batch, the planner's handing on its
     notes; a deploy, ops's record of the word, or, once the word stands (ops.word_stands), the deploy's end; a step,
     ops's record of it; anything else, its owner's act on it. A decision of facts alone (code.7)."""
@@ -10861,7 +10913,12 @@ def answered_waits(c, entries):
     kind = (c["key"] or "").split("/")[0]
     if kind == "land":
         bolts = [b for b, _, _ in card_heads(a.get("heads"))]
-        return f"waits on the runner to land {joined(bolts)}" if bolts else f"sent with no bolt ticked: waits on {by} to close it"
+        at = a.get("at")
+        since = at.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(at, datetime.datetime) else ""
+        waits = ticked_waits(entries, c["card"], bolts, since)
+        return (f"waits on the runner to land {joined(waits)}" if waits else
+                "every bolt it ticked has landed or been stopped: crew's next raise closes it" if bolts else
+                f"sent with no bolt ticked: waits on {by} to close it")
     if kind == "proposal":
         said = a.get("answer") or ""
         yes = re.search(r"\bapproved\b", said) or re.search(r"\bticked (?!none)", said)
@@ -10889,15 +10946,24 @@ WAITS_ON_OWNER = "answered: "
 def send_waits(entries, card):
     """The bolts the user's send on a kit's landings card still waits to land (rail-cards "The sweep leaves an answered
     landings card while a bolt it ticked waits to land", design Decision 5): each its card.answer's Heads name, the
-    first recorded, with no bolt.land or bolt.drop of it since, none refused; [] when the run record (entries) holds no
-    answer of the card, or one ticking none. A decision of facts alone (code.7)."""
+    first recorded, with no bolt.land or bolt.drop of it since, none refused, and no land of it that send posted
+    stopped, which spends the send (send_spent); [] when the run record (entries) holds no answer of the card, or one
+    ticking none. A decision of facts alone (code.7)."""
     answer = next((e for e in entries if e.get("Act") == "card.answer" and e.get("Card") == card and not e.get("Refused")), None)
     if answer is None:
         return []
-    since = answer.get("At") or ""
+    return ticked_waits(entries, card, [b for b, _, _ in card_heads(answer.get("Heads"))], answer.get("At") or "")
+
+
+def ticked_waits(entries, card, ticked, since=""):
+    """Of the bolts the user's send on a kit's landings card (card, its id) ticked, in its order, those it still waits
+    on the runner to land, from the run record's entries, oldest first: each with no bolt.land or bolt.drop of it at
+    or after since, the answer's time as the record writes it, none refused, and none whose land that send posted was
+    stopped (send_spent). A decision of facts alone (code.7)."""
     ended = {o[5:] for e in entries if e.get("Act") in ("bolt.land", "bolt.drop") and not e.get("Refused") and (e.get("At") or "") >= since
              for o in e.get("On") or [] if o.startswith("bolt/")}
-    return [b for b, _, _ in card_heads(answer.get("Heads")) if b not in ended]
+    spent = send_spent(entries, card, [b for b in ticked if b not in ended])
+    return [b for b in ticked if b not in ended and b not in spent]
 
 
 def stray_cards(fleet, found, sv, rows, cards, unread, logs=None, runs=None):
@@ -14868,7 +14934,8 @@ def landings_unoffered(read, label, here, kits):
     (code.7): the land rows it made (rail_rows, each bolt with its head now and whether it can land, each fix of main
     by name), each card's rows as its last post or change the drive's run record holds recorded them (shown_heads),
     the user's answer on it as the read holds it (record_reading's answered, or the sweep's, its heads the bolts they
-    ticked), and the sends kept on its key's closed cards (landings_sent). A card whose rows the record holds no post
+    ticked), those of them whose land on that send was stopped (send_spent), and the sends kept on its key's closed
+    cards (landings_sent). A card whose rows the record holds no post
     of, one the sweep posted in this read among them, is left, since it was raised as its rows stand. Only the rows a
     card asks about count, those the land row says land on the user's send (lands_by): a bolt that lands on proof, or
     waits on a hold to, is never a row the card should show (Decision 2 of a-proven-bolt-lands-on-proof)."""
@@ -14885,11 +14952,12 @@ def landings_unoffered(read, label, here, kits):
         if shown is None:
             continue
         r, answered = land[c["key"]], c.get("answered")
+        ticked = [b for b, _, _ in card_heads(answered.get("heads"))] if answered else None
         names = unoffered([(b["bolt"], b.get("head"), b["can"]) for b in r.get("bolts") or []
                            if (r.get("lands") or {}).get(b["bolt"], "send") == "send"]  # a row the card asks about (lands_by)
                           + [(f["fix"], None, f["can"]) for f in r.get("fixes") or []],
-                          dict(heads=card_heads(shown), taking=heads_taking(shown), next=heads_next(shown),
-                               ticked=[b for b, _, _ in card_heads(answered.get("heads"))] if answered else None),
+                          dict(heads=card_heads(shown), taking=heads_taking(shown), next=heads_next(shown), ticked=ticked,
+                               spent=set(send_spent(entries, c["card"], ticked or []))),
                           landings_sent(entries, c["key"], c["by"]))
         if names:
             out[(label, kit)] = names

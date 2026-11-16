@@ -437,6 +437,18 @@ class TestRows:
         assert self.land_line({key: self.kit_card("other@d185a87", answered="other@d185a87")}) == line + f"follows: the card after {key}'s answered one carries it"
         assert self.land_line() == line + f"follows: the next card under {key} carries it"
 
+    def test_a_bolt_whose_land_on_the_send_was_stopped_follows_and_is_held_by_no_send(self):
+        """crew-rail "A bolt whose land on the send was stopped" (fix a-stopped-landing-puts-its-bolt-back-on-a-card):
+        the user's send ticked apex-zones, and the runner stopped the land that send posted; the send is spent, so the
+        card after the answered one carries it, and the line no longer says the send holds it."""
+        key = f"land/{KIT}"
+        spent = dict(self.kit_card("apex-zones@d185a87", answered="apex-zones@d185a87"), spent={"apex-zones"})
+        line = (f"apex-zones, on {BOX}, in Flume stream wldn: stays: can land on your send of land/{KIT}; "
+                f"follows: the card after {key}'s answered one carries it")
+        assert self.land_line({key: spent}) == line
+        assert plan.card_stand("apex-zones", self.H, True, spent, {}) == ("follows", True)
+        assert plan.card_stand("apex-zones", self.H, False, spent, {}) is None
+
     def test_a_bolt_that_cant_land_and_is_no_row_of_the_card_says_nothing_of_it(self):
         sv = survey()
         sv[BOX]["kits"]["/kit/main"]["bolts"]["apex-zones"]["head"] = "e" * 40
@@ -453,8 +465,15 @@ class TestRows:
                    post("req_p1", "proposal/1", minutes=2)]
         held = plan.record_reading("wldn", entries, the_plan(), NOW - datetime.timedelta(days=14))["held"]
         assert held["land_cards"] == {k: dict(card="req_k1", heads=[("z", "2222222", False), ("w", "3333333", False)], taking={"w"},
-                                              answered=dict(at=NOW - datetime.timedelta(minutes=1), answer="ticked z", heads="z@2222222"))}
+                                              answered=dict(at=NOW - datetime.timedelta(minutes=1), answer="ticked z", heads="z@2222222"),
+                                              spent=set())}
         assert held["sends"] == {k: {"y": "1111111"}}
+        # z's land on req_k1's send stopped: the send is spent for z, which card_stand and unoffered read (send_spent)
+        z = "2222222" + "0" * 33
+        stop = [dict(Act="bolt.submit", On=["bolt/z"], Card="req_k1", Head=z, Request="5", Outcome="asked"),
+                dict(Act="bolt.submit", On=["bolt/z"], Head=z, Request="5", Outcome="stopped", Why="a place on bolt/z is live")]
+        held = plan.record_reading("wldn", entries + stop, the_plan(), NOW - datetime.timedelta(days=14))["held"]
+        assert held["land_cards"][k]["spent"] == {"z"}
 
     def test_the_record_reading_keeps_what_says_which_bolts_the_user_left(self):
         left = [dict(Act="landing.left", On=["kit/k"], Key="land/k", Heads="b@d185a87"), dict(Act="bolt.leave", On=["bolt/b"], Head="a" * 40)]
@@ -621,6 +640,22 @@ class TestText:
         assert "open, asked by" not in out
         none, hm = self.answered(f"land/{KIT}", "req_e9", "wldn-ops", "ticked none, left a")
         assert f"answered {hm} (5m ago): ticked none, left a; sent with no bolt ticked: waits on wldn-ops to close it (req_e9)" in text(rows(), cards=[none])
+
+    def test_a_landings_card_the_user_sent_names_only_the_bolts_it_still_waits_on(self):
+        """crew-rail "A landings card some of whose bolts landed or were stopped" (fix
+        a-stopped-landing-puts-its-bolt-back-on-a-card): the user ticked a, b and c; a landed and the runner stopped the
+        land of b that send posted, so the card waits on the runner to land c alone; once c lands too, crew's next raise
+        closes it."""
+        k, _ = self.answered(f"land/{KIT}", "req_e9", "wldn-ops", "ticked a, b and c", heads="a@1111111 b@2222222 c@3333333")
+        b = "2222222" + "0" * 33
+        entries = [did("bolt.land", 3, On=["bolt/a"], Repo=KIT),
+                   did("bolt.submit", 4, On=["bolt/b"], Head=b, Request="5", Outcome="asked", Card="req_e9"),
+                   did("bolt.submit", 2, On=["bolt/b"], Head=b, Request="5", Outcome="stopped", Why="a place on bolt/b is live")]
+        assert plan.answered_waits(k, entries) == "waits on the runner to land c"
+        assert plan.answered_waits(k, entries + [did("bolt.land", 1, On=["bolt/c"], Repo=KIT)]) == (
+            "every bolt it ticked has landed or been stopped: crew's next raise closes it")
+        # a bolt landed before the user answered is none of this send's
+        assert plan.answered_waits(k, [did("bolt.land", 10, On=["bolt/a"], Repo=KIT)]) == "waits on the runner to land a, b and c"
 
     @pytest.mark.parametrize("answer, waits", [("approved", "waits on wldn-planner to apply it"),
                                                 ("ticked u1, left u2", "waits on wldn-planner to apply it"),
@@ -1329,6 +1364,30 @@ class TestSweepJudged:
         refused = did("bolt.land", 5, On=["bolt/a"], Refused="a has not landed")
         assert self.judged(cards_=[k], entries=[answer, refused], kits=("crew",))["waiting_on_owner"] == [(k, ["a"])]
         assert plan.send_waits([dict(answer, Heads=None)], "req_5f") == [] and plan.send_waits([], "req_5f") == []
+
+    def test_an_answered_landings_card_whose_ticked_bolts_land_on_that_send_was_stopped_waits_on_it_no_more(self):
+        """rail-cards "The ticked bolt's land was stopped" (fix a-stopped-landing-puts-its-bolt-back-on-a-card): the user
+        approved land/crew ticking a and b; a landed and the runner stopped b's land on that send, which spends it, so
+        the send waits on neither and the sweep closes the card its row is gone for. A stop of a land on proof, or on
+        another card's send, spends nothing of this one, and b still waits."""
+        k = card("land/crew", "req_5f", "wldn-ops")
+        answer = did("card.answer", 10, Card="req_5f", Key="land/crew", By="wldn-ops", Answer="approved", Heads="a@1111111 b@2222222")
+        landed = did("bolt.land", 5, On=["bolt/a"], Repo="crew")
+        b = "2222222" + "0" * 33
+
+        def stop(**by):
+            return [did("bolt.submit", 8, On=["bolt/b"], Head=b, Request="5", Outcome="asked", **by),
+                    did("bolt.submit", 6, On=["bolt/b"], Head=b, Request="5", Outcome="stopped", Why="a place on bolt/b is live")]
+        assert plan.send_waits([answer, landed], "req_5f") == ["b"]
+        assert plan.send_waits([answer, landed] + stop(Card="req_5f"), "req_5f") == []
+        j = self.judged(cards_=[k], entries=[answer, landed] + stop(Card="req_5f"), kits=("crew",))
+        assert j["waiting_on_owner"] == [] and [c for c, *_ in j["gone"]] == [k]
+        assert plan.send_waits([answer, landed] + stop(Form="proof"), "req_5f") == ["b"]
+        assert plan.send_waits([answer, landed] + stop(Card="req_4e"), "req_5f") == ["b"]
+        # a later land of b asked again, its last landing no longer stopped: the send it was asked on waits on it
+        again = did("bolt.submit", 4, On=["bolt/b"], Head=b, Request="6", Outcome="asked", Card="req_5f")
+        assert plan.send_waits([answer, landed] + stop(Card="req_5f") + [again], "req_5f") == ["b"]
+        assert plan.send_spent([answer, landed] + stop(Card="req_5f"), "req_5f", ["a", "b"]) == {"b": (b, "a place on bolt/b is live")}
 
     def test_a_kits_card_is_left_while_the_host_of_a_bolt_of_it_does_not_answer(self):
         p = plan.Plan(plan_text(bolts=[("apex-zones", KIT, "swb-2", "stays")], units=[("zone-one", KIT, "apex-zones", [])]))

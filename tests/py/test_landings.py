@@ -971,6 +971,18 @@ def test_an_answered_card_whose_ticked_bolts_landing_was_stopped_closes_naming_i
                              "card that follows asks for it again.", [], [])
 
 
+def test_two_of_three_ticked_landed_and_the_third_stopped_closes_the_card_asking_for_the_third_again():
+    """rail-cards "A ticked bolt stopped at the close", as flume's land/flume stood on 2026-11-14 (fix
+    a-stopped-landing-puts-its-bolt-back-on-a-card): the user ticked y, z and w; y and w landed and left the plan, and
+    the runner stopped z's land on that send. The card closes naming both landings and z's stop, and the card that
+    follows asks for z."""
+    step = plan.landings_step([stopped_box("z")], answered("y@abc1234 z@abc1234 w@abc1234"), ["y", "z", "w"], {"z"},
+                              landed={"y": "1a2b3c4" + "0" * 33, "w": "5d6e7f8" + "0" * 33})
+    assert step == ("close", "Landed on GitHub's main: y at 1a2b3c4 and w at 5d6e7f8; every host's folder follows by "
+                             f"swancloud's timer within minutes. z's landing at abc1234 was stopped, nothing of the bolt's: {STOP}; "
+                             "your send of it is spent, and the card that follows asks for it again.", [], [])
+
+
 def test_a_stopped_bolt_beside_one_proven_since_closes_the_card_and_the_one_that_follows_asks_for_both():
     step = plan.landings_step([stopped_box("z"), box("w")], answered("z@abc1234"), ["z"], {"z", "w"})
     assert step == ("close", f"z's landing at abc1234 was stopped, nothing of the bolt's: {STOP}; your send of it is spent, and the "
@@ -1871,6 +1883,19 @@ def card_of(shown, ticked=None):
     return dict(heads=plan.card_heads(shown), taking=plan.heads_taking(shown), next=plan.heads_next(shown), ticked=ticked)
 
 
+def test_a_ticked_row_whose_land_on_the_send_was_stopped_is_unoffered():
+    """rail-cards "A ticked bolt whose land on the send was stopped" (fix a-stopped-landing-puts-its-bolt-back-on-a-card):
+    the user sent y and z; the runner stopped the land of z that send posted, spending it, so z is held by no send and
+    the rail's read raises the card, whose raise closes it naming the stop and asks for z again; y, whose land the send
+    still waits on, is held by it. A stop names no row of a card still waiting on the user."""
+    sent = dict(card_of("y@abc1234 z@abc1234", ["y", "z"]), spent={"z"})
+    assert plan.unoffered([("y", H1, True), ("z", H1, True)], sent, {}) == ["z"]
+    assert plan.unoffered([("y", H1, True), ("z", H2, True)], sent, {}) == ["z"]
+    assert plan.unoffered([("y", H1, True), ("z", H1, True)], dict(card_of("y@abc1234 z@abc1234", ["y", "z"]), spent=set()), {}) == []
+    assert plan.unoffered([("z", H1, True)], dict(card_of("z@abc1234"), spent={"z"}), {}) == []
+    assert plan.unoffered([("z", H1, False)], sent, {}) == []
+
+
 def test_a_row_the_open_card_does_not_offer_as_it_stands_is_unoffered():
     """rail-cards "The rail's read raises a landings card that does not show a row as it stands": a row that can land,
     held by no send, is unoffered when the card shows it on no row, at another head, taking main first, or, once
@@ -2643,9 +2668,13 @@ def test_a_landing_is_read_and_recorded_by_a_host_away_from_the_kits_with_every_
     from facts import writes_at
     emitted = writes_at(monkeypatch, [ASKED])
     monkeypatch.setattr(plan, "unlanded_ask", lambda *a, **k: None)
+    raised = []  # the raise of its kit's card is handed to the drive's main machine, and reads no host for the record
+    monkeypatch.setattr(plan, "land_hand", lambda fleet, label, kit, note=None: raised.append((label, kit)))
+    monkeypatch.setattr(plan, "plan_of", lambda fleet, label: plan.Plan("%rec: Bolt\n\nBolt: y\nRepo: crew\nPath: flume\n\n%rec: Unit\n\n"))
     landed, said = plan.landing_read({}, "swancloud", "y", base_run("bolt-failed"), [ASKED])
     assert (landed, said) == (False, "landing refused, a check failed: check-full failed: tests:logic 3 failed (tests/py/test_landing.py)")
     assert [(e["Act"], e["On"], e["refused"]) for e in emitted] == [("bolt.submit", ["bolt/y"], said)]
+    assert raised == [("swancloud", "crew")]
 
 
 # boomdrive's a-boomdrive-release-reports-its-own-version as y (tests/py/test_landed_on_main.py): its head, main's commit
@@ -3030,6 +3059,37 @@ def test_a_later_cards_send_lands_a_bolt_whose_land_on_an_earlier_send_was_stopp
                     f"  z's land on an earlier card's send at abc1234 was stopped, nothing of the bolt's: {stop}; that send is "
                     "spent, and the user's send of this card lands it",
                     "  z: no land is posted for it yet: crew's next raise of the card posts it"]
+
+
+def test_a_stop_on_the_send_closes_the_card_and_asks_again_though_the_head_moved_since(monkeypatch, capsys):
+    """rail-cards "A ticked bolt stopped at the close" and "A stopped land whose head moved" (fix
+    a-stopped-landing-puts-its-bolt-back-on-a-card): z, marked to stay, was ticked on req_k1's send at abc1234, and the
+    runner stopped the land that send posted (request 5), a place on bolt/z being live; that place merged into z,
+    moving its head to def5678 with its own work unchanged. The send is spent at any head (runner.lands_due), so no land
+    is posted on it, and the raise closes req_k1 naming the stop and posts a card following it that asks for z,
+    rather than leaving req_k1 waiting on a land nobody will post."""
+    from test_runner import rec
+    stop = "flume refused it: a place on bolt/z is live"
+    stopped = [dict(Act="bolt.submit", On=["bolt/z"], Card="req_k1", Head=H1, Request="5", Outcome="asked"),
+               dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="stopped", Why=stop)]
+    card = [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads="z@abc1234")]
+    answer = {"status": "answered", "turn": "agent", "version": 3, "answer": {"approved": True}}
+    acts = proof_acts(monkeypatch, {"z": row("z", H2)}, stopped + card, answers=dict(POSTED, get_request=(answer, None)),
+                      drive=stopped, lands=[rec(5, "land", "bolt/z", Of=2)], reads=TestLandsDue().reads(refused={5: stop}),
+                      works={"z": work()})
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    said = (f"z's landing at abc1234 was stopped, nothing of the bolt's: {stop}; your send of it is spent, and the card that "
+            "follows asks for it again.")
+    assert getattr(acts, "posts", []) == []
+    assert [(e["Act"], e.get("State"), e.get("Outcome"), e.get("Heads")) for e in acts.emitted if e["Act"] != "card.answer"] == [
+        ("card.close", "closed", said, None), ("card.post", None, None, "z@def5678")]
+    # its head unmoved, the step reads the stop at the head now as before: the same close, and z asked for at abc1234
+    acts = proof_acts(monkeypatch, {"z": row("z", stopped=(H1, stop))}, stopped + card, answers=dict(POSTED, get_request=(answer, None)),
+                      drive=stopped, lands=[rec(5, "land", "bolt/z", Of=2)], reads=TestLandsDue().reads(refused={5: stop}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert getattr(acts, "posts", []) == []
+    assert [(e["Act"], e.get("Outcome"), e.get("Heads")) for e in acts.emitted if e["Act"] != "card.answer"] == [
+        ("card.close", said, None), ("card.post", None, "z@abc1234")]
 
 
 def test_a_bolt_whose_forecast_could_not_be_made_lands_on_no_proof(monkeypatch, capsys):
