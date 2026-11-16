@@ -6,7 +6,7 @@
 # planner, which stands, is refused as today with nothing asked. The planner's run, named from its place: crew role start
 # takes both asks of it in one turn, writes its brief to the host's file and prints it, each ask and the card the user
 # answered in its name, read from Pending You as madswan-planner; an ask written after the start is not the turn's; crew
-# role end, as the turn's prompt names it, answers the turn and writes the report; and outside a run each is refused.
+# role end answers the turn and writes the report at the path it is given; and outside a run each is refused.
 # The user opens madswan's design agent: with no run of it in mac-studio's runner's records, an open ask from the user
 # naming the place its run opens as; with one live there, nothing written and the run's place named. The design agent's
 # run lands a record: crew role land writes a launch of Flume's chore kind in a blueprints repository on main for
@@ -20,7 +20,7 @@
 # What a tell decides, the ask's fields, what a start takes and prints, what an open reads of the runner and what a land
 # writes or refuses, and what a run's view and the attention line say, are logic cases (tests/py/test_tell_asks.py,
 # test_asks.py, test_board.py); each step here checks a command's wiring once.
-# Reads: plugin/flume/ plugin/roles/ plugin/lib/board.py tests/py/flume-deliveries/
+# Reads: plugin/flume/kinds/ plugin/roles/ plugin/lib/board.py tests/py/flume-deliveries/
 . "${TESTS:?run crew tests through tests/run, which puts stub herdr, ssh and claude first}/lib.sh" || exit 2
 world
 blueprints afterthought/blueprints >/dev/null; blueprints agentplot/blueprints >/dev/null
@@ -69,7 +69,7 @@ brief=$(home_of mac-studio)/.local/state/crew/madswan/turns/planner.md
 has "$out" "Read $brief whole first: it is your brief as madswan-planner, filled for madswan."
 has "$out" "ask 1: tell from madswan-design"$'\n'"  Record 0053 is accepted ZQXR"$'\n'"ask 3: tell from madswan-design"$'\n'"  Batch 4 is due"
 has "$out" "card card/req_stub-90/2: Which zone?"$'\n'"  words: eu-west-1"
-has "$(cat "$brief")" "Your drive's \`runs\` names you \`on-demand\`"; lacks "$(cat "$brief")" "as your kind"; lacks "$(cat "$brief")" "{{"
+[[ -s $brief ]] || fail "the start wrote no brief at $brief"; lacks "$(cat "$brief")" "{{"
 grep -q '^mac-studio pendingyou list_pending {"name": "madswan-planner"}$' "$CREW_TEST_LOG" || fail "the start did not read its cards as madswan-planner"
 eq "$(at asks.rec | recsel -t Turn -p Turn,Run,Place,Took | tr '\n' ' ')" "Turn: 1 Run: madswan-planner Place: crew-planner--madswan Took: ask/1 Took: ask/3 "
 eq "$(acts_since "$t0" madswan/main "$ms")" "1"
@@ -77,18 +77,16 @@ expect_ok crew trace agent/madswan-planner --label madswan
 has "$out" "(took 2)"
 ok "a role's run, named from its place, takes what waits in one turn, writes and prints its brief, its asks and the card the user answered in its name"
 
-# An ask after the start waits for the next run; the end, as the turn's prompt names it, answers the turn and writes the report.
+# An ask after the start waits for the next run; the end answers the turn and writes the report at the path it is given.
 CREW_AGENT=madswan-design expect_ok crew tell madswan-planner "One more thing"
-end=$(grep -o 'crew role end --report {{report}}' "$CREW/plugin/flume/turn.md" | head -1)
 report=$T/flume/state/crew-planner--madswan/turn.md
-read -ra endcmd <<< "${end//\{\{report\}\}/$report}"
-run expect_ok "${endcmd[@]}" "proposed the fix bolt"
+run expect_ok crew role end --report "$report" "proposed the fix bolt"
 has "$out" "turn 1 of madswan-planner is ended, and its report is $report."
 eq "$(at asks.rec | recsel -t Turn -P Said)" "proposed the fix bolt"
 has "$(cat "$report")" "# Turn 1 of madswan-planner"; has "$(cat "$report")" "- ask/3: tell from madswan-design"
 eq "$(at asks.rec | recsel -C -t Ask -e "Role = 'planner'" -P Id | tr '\n' ' ')" "1 3 4 "
 lacks "$(at asks.rec | recsel -t Turn -P Took)" "ask/4"
-ok "an ask written during a run is not its turn's, and the end answers the turn and writes the report at the prompt's path"
+ok "an ask written during a run is not its turn's, and the end answers the turn and writes the report at the path it is given"
 
 # Outside a run, the start and the end are refused and write nothing.
 t0=$(git --git-dir "$ms" rev-parse madswan/main)
@@ -185,7 +183,7 @@ has "$out" "unit/a waits on you: the place /flume/places/change--a, launched by 
 has "$out" $'Flume holds these ends for you, each confirmed to it as you when your turn ends (crew role end):\nunit/a (the place /flume/places/change--a, request 2): stage/construct/2/delivered (expired), stage/code/1/ended-short\n'
 eq "$(at asks.rec | recsel -t Turn -e "Turn = 2" -P Took | tr '\n' ' ')" "ask/4 place/2@1794085696 $(for k in $keys; do printf 'end/2/%s ' "$k"; done)"
 t0=$(act_tip madswan/main "$ms")
-run expect_ok "${endcmd[@]}" "answered unit a's stop-short"
+run expect_ok crew role end --report "$report" "answered unit a's stop-short"
 has "$out" "The 2 ends it took are confirmed to Flume as madswan/planner once the runners carry request 3."
 eq "$(at requests.rec | recsel -t Request -e "Act = 'confirm'" -P Request,Work,Of,Recipient | tr '\n' ' ')" "3 unit/a 2 madswan/planner "
 eq "$(at requests.rec | recsel -t Request -e "Act = 'confirm'" -P Delivery | tr '\n' ' ')" "$keys "

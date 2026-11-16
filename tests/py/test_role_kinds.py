@@ -106,13 +106,16 @@ def test_nothing_names_a_model_instructions_or_an_environment():
 
 
 class TestThePrompt:
-    """turn.md, the one prompt the five kinds share."""
+    """turn.md, the one prompt the five kinds share, as Flume renders it: every part it asks for filled, its words
+    section closed. What it says is kept by those who write and review it, and no case pins its words (the family's
+    principle 16, no check reads Markdown)."""
 
     @pytest.mark.parametrize("words", [None, "The question: crew role start refused.\n\nThe answer: try again."])
     def test_flume_fills_every_part_it_asks_for_with_words_and_without(self, words):
         text = render(TURN, words)
         assert "{{" not in text and "}}" not in text
-        assert (words in text) if words else ("started again" not in text)
+        kept = TURN.split(OPEN, 1)[1].split(CLOSE, 1)[0].split("{{words}}")[0].strip()
+        assert (words in text) if words else (kept not in text)
 
     def test_its_words_section_is_closed_and_holds_the_only_words_part(self):
         outside = re.sub(re.escape(OPEN) + ".*?" + re.escape(CLOSE), "", TURN, flags=re.S)
@@ -125,24 +128,6 @@ class TestThePrompt:
     def test_it_names_who_the_run_is(self):
         assert all(part in TURN for part in ("{{kind}}", "{{name}}", "{{place}}"))
 
-    def test_it_says_the_role_is_on_demand_in_the_teams_files_own_word(self):
-        """role-runs, The role's way of running: the word the drive's `runs` names the role by, never that it runs as
-        its kind."""
-        assert "a run of one of crew's main-level roles, one its drive's `runs` names `on-demand`." in TURN
-        assert "as its kind" not in TURN
-
-    def test_the_turn_starts_with_crew_role_start_and_ends_with_crew_role_end_writing_its_report(self):
-        start, end = TURN.index("`crew role start`"), TURN.index('`crew role end --report {{report}} "<what was done>"`')
-        assert start < end
-
-    def test_its_end_says_it_asks_the_runners_to_confirm_the_ends_the_turn_took(self):
-        """role-runs, The end confirms: the step that runs crew role end says so, and the start's says it takes the ends."""
-        step = next(l for l in TURN.split("\n") if l.startswith("3. "))
-        assert "`crew role end" in step and "asks the runners to confirm to Flume each end the turn took, so none is taken again" in step
-        assert "the ends Flume holds for your role" in next(l for l in TURN.split("\n") if l.startswith("1. "))
-
-    def test_it_places_needs_in_the_sentence_that_asks_on_a_card_and_stops_short_only_on_a_refused_start(self):
-        """Flume appends {{needs}} to a prompt that does not place it; placed here, it follows the sentence."""
+    def test_it_places_needs_once(self):
+        """Flume appends {{needs}} to a prompt that does not place it; placed here once, it is not appended again."""
         assert TURN.count("{{needs}}") == 1
-        sentence = TURN[TURN.rindex("\n\n", 0, TURN.index("{{needs}}")):TURN.index("{{needs}}")]
-        assert "ask on a card" in sentence and "Stop short only when `crew role start` refuses" in sentence
