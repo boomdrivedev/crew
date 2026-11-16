@@ -547,14 +547,14 @@ class TestTheFirstReadActs:
     """bolt-teams "A landing is recorded by the first act that reads it in the runner's report" (Decision 7):
     plan.landing_read, on whichever host reads it, with no ssh: a landing closes the bolt at Flume's commit in ops's
     name; a failed check asks ops with Flume's words, its row held by the record (refusals); a conflict launches the
-    take-main fix once, keyed by main's revision; a stop asks ops and keeps the row's box (stops); a second read records
-    nothing more."""
+    take-main fix once, keyed by main's revision; a stop asks ops and keeps the row's box (stops); a refusal or a stop
+    recorded raises the bolt's kit's landings card (unheld_raise); a second read records and raises nothing more."""
 
     @pytest.fixture(autouse=True)
     def acts(self, monkeypatch):
         import crew
         import record
-        self.emitted, self.closed, self.asked, self.taken = [], [], [], []
+        self.emitted, self.closed, self.asked, self.taken, self.raised = [], [], [], [], []
 
         def no_host(*a, **k):
             raise AssertionError("a landing's read reaches no host")
@@ -568,6 +568,7 @@ class TestTheFirstReadActs:
         monkeypatch.setattr(plan, "bolt_land", lambda fleet, a, by=None, close_why=None, card=True: self.closed.append((a.bolt, by, close_why, card)))
         monkeypatch.setattr(plan, "unlanded_ask", lambda fleet, label, bolt, kit, n, words: self.asked.append((bolt, kit, n, words)))
         monkeypatch.setattr(plan, "take_main_launch", lambda fleet, label, t, bolt, conflict: self.taken.append((bolt, conflict)))
+        monkeypatch.setattr(plan, "land_hand", lambda fleet, label, kit, note=None: self.raised.append((label, kit, note)))
         monkeypatch.setenv("CREW_AGENT", "swancloud-planner")
 
     def read(self, fixture, entries=(ASKED,), card=True, **more):
@@ -655,6 +656,31 @@ class TestTheFirstReadActs:
         stopped = dict(ASKED, Outcome="stopped", Why=e["why"])
         assert plan.stops([ASKED, stopped]) == {"y": (TIP, "the merge queue withdrew the submission")}
         assert plan.refusals([ASKED, stopped]) == {} and self.asked[0][2] == "2"
+
+    def test_a_stop_recorded_raises_its_kits_landings_card_once(self):
+        """bolt-teams "A stop recorded by a later read" (fix a-stopped-landing-puts-its-bolt-back-on-a-card): the read
+        that records y's land stopped raises crew's landings card, whose raise closes an answered card at the stop and
+        asks for y again, with no read of ops's; a read inside a raise (card False) raises none, the raise acting on
+        it, and a second read records and raises nothing."""
+        self.read("bolt-submitted", more={}, refused={2: "flume refused it: a place on bolt/y is live"})
+        assert self.raised == [("swancloud", "crew", None)]
+        (e,) = self.emitted
+        self.read("bolt-submitted", entries=(ASKED, dict(ASKED, Outcome="stopped", Why=e["why"])), more={},
+                  refused={2: "flume refused it: a place on bolt/y is live"})
+        assert len(self.emitted) == 1 and self.raised == [("swancloud", "crew", None)]
+        self.emitted.clear(), self.raised.clear(), self.tip.clear()
+        self.read("bolt-withdrawn", card=False)
+        assert [e["Outcome"] for e in self.emitted] == ["stopped"] and self.raised == []
+
+    def test_a_refusal_recorded_raises_its_kits_landings_card_and_a_landing_raises_through_its_close(self):
+        """rail-cards "A ticked bolt held at the close": the read that records y's landing refused raises crew's card,
+        which closes an answered card once each bolt it ticked has landed or been held; a landing is closed by
+        bolt_land, which raises the card itself, so its read raises none of its own."""
+        self.read("bolt-failed")
+        assert self.raised == [("swancloud", "crew", None)]
+        self.emitted.clear(), self.raised.clear(), self.tip.clear()
+        self.read("bolt-landed")
+        assert self.raised == [] and [c[3] for c in self.closed] == [True]
 
     def test_a_land_the_runner_refused_is_a_stop_in_its_words(self):
         self.read("bolt-submitted", more={}, refused={2: "flume refused it: a place on bolt/y is live"})
@@ -772,6 +798,8 @@ class TestALandingReadOnMainCloses:
         monkeypatch.setattr(plan, "bolt_land", lambda fleet, a, by=None, close_why=None, card=True: self.closed.append((a.bolt, by, close_why, card)))
         monkeypatch.setattr(plan, "unlanded_ask", lambda fleet, label, bolt, kit, n, words: self.asked.append((bolt, kit, n, words)))
         monkeypatch.setattr(plan, "take_main_launch", lambda fleet, label, t, bolt, conflict: self.taken.append((bolt, conflict)))
+        self.raised = []
+        monkeypatch.setattr(plan, "land_hand", lambda fleet, label, kit, note=None: self.raised.append((label, kit)))
         monkeypatch.setenv("CREW_AGENT", "madswan-planner")
         self.held = {HEAD: 0, UNIT: 0}
         monkeypatch.setattr(plan, "main_tip", lambda repo: "e" * 40)
@@ -814,7 +842,7 @@ class TestALandingReadOnMainCloses:
         assert self.emitted == [] and self.closed == []
         assert self.read({1: "flume-0.20.0/landed-held", 2: "flume-0.17.0/bolt-submitted"}, **self.stopped())[0] is False
         assert [(e["Act"], e["Outcome"]) for e in self.emitted] == [("bolt.submit", "stopped")]
-        assert self.closed == [] and len(self.asked) == 1
+        assert self.closed == [] and len(self.asked) == 1 and len(self.raised) == 1  # its kit's card raised on the stop
 
 
 class TestALandingIsRecordedInTheRunRecordAsAsked:
