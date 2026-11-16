@@ -216,7 +216,7 @@ A `bolt.submit` entry's `Submission` SHALL be only the merge queue's entry that 
 - **THEN** that `bolt.submit` on `bolt/y` carries `Submission: 412`
 
 #### Scenario: A land the runner refused
-- **WHEN** the runner answered land 57 of `y` refused because a place on `bolt/y` is live, Flume naming no submission, and crew records it stopped
+- **WHEN** the runner answered land 57 of `y` refused, Flume naming no place on `bolt/y` and no submission, and crew records it stopped
 - **THEN** that `bolt.submit` on `bolt/y` carries no `Submission`
 
 ### Requirement: The run record's descriptor allows a land's request
@@ -335,3 +335,10 @@ The entry of a `crew send` SHALL be appended to the sending host's own file of t
 #### Scenario: A refused push
 - **WHEN** a send is typed into its operator and the push of its entry is refused
 - **THEN** the entry stays in the sending host's file, the refusal is said once, and `crew send` reports the send made
+
+### Requirement: A land that waits on its branch is one entry marked waiting
+A land the runner answered refused while Flume's status of the bolt's base place named a place on its branch SHALL be recorded once, by the first read of it, as one `bolt.submit` on `bolt/<bolt>` carrying `Outcome: waiting`, the land's number as `Request`, the head it carried as `Head` and Flume's words as `Why`, with no `Refused` and no `Submission`.
+
+#### Scenario: A land that waits
+- **WHEN** the runner answered land 57 of `y`, posted at `abc1234`, refused, Flume's status of `y`'s base place naming `fix--y-1` on `bolt/y`
+- **THEN** the run record holds one `bolt.submit` on `bolt/y` with `Outcome: waiting`, `Request: 57`, `Head` `abc1234`'s commit and Flume's words as `Why`, and no `Refused` or `Submission`, however often it is read
