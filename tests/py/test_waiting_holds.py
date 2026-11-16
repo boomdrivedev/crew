@@ -132,3 +132,93 @@ class TestHoldDue:
         unread = {"mac-studio": {"host": "mac-studio", "why": "no branch madswan/runner/mac-studio", "answers": {}, "places": {}}}
         assert due(rs, dict(ran(label="madswan"), **unread)) is None
         assert due(rs, ran(held={1: "no room"})) is None
+
+
+CUTOVER = {"kit": "crew", "why": "Cutover"}
+
+
+def facts(can=True, how="proof", stays=False, left=False, stop=None, hold=None, batches=(), known=True):
+    """A land row's bolt's facts as rail_rows hands user_wait them."""
+    return dict(can=can, how=how, stays=stays, left=left, stop=stop, hold=hold, batches=list(batches), known=known)
+
+
+class TestUserWait:
+    """plan.user_wait: a bolt of a land row waits on the user's send, their lift of a hold or their answer to batches,
+    on nothing of theirs, or on what crew can't tell (design Decision 2)."""
+
+    def test_a_bolt_marked_to_stay_waits_on_the_send(self):
+        """bolt-teams, Marked to stay."""
+        assert plan.user_wait(facts(how="send", stays=True)) == {"on": "send", "why": "stays", "hold": None}
+
+    def test_a_left_bolt_and_a_stopped_one_wait_on_the_send_saying_why(self):
+        """bolt-teams, Left by the user; Its land stopped."""
+        assert plan.user_wait(facts(how="send", left=True)) == {"on": "send", "why": "left", "hold": None}
+        assert plan.user_wait(facts(how="send", stop="a place on bolt/y is live")) == {"on": "send", "why": "stopped", "hold": None}
+
+    def test_a_bolt_marked_to_stay_under_a_hold_waits_on_both(self):
+        """bolt-teams, Marked to stay under a hold: lands_by reads send under a hold, and the wait names both."""
+        assert plan.user_wait(facts(how="send", stays=True, hold=CUTOVER)) == {"on": "send", "why": "stays", "hold": CUTOVER}
+
+    def test_a_bolt_due_a_land_on_proof_under_a_hold_waits_on_its_lift(self):
+        """bolt-teams, Under a hold on its kit."""
+        assert plan.user_wait(facts(how="hold", hold=CUTOVER)) == {"on": "hold", "hold": CUTOVER}
+
+    def test_a_bolt_kept_only_by_unanswered_batches_waits_on_them(self):
+        """bolt-teams, Waiting on a batch: rail_rows hands the batches only where they alone keep it."""
+        assert plan.user_wait(facts(can=False, batches=[5])) == {"on": "batch", "batches": [5], "hold": None}
+        assert plan.user_wait(facts(can=False, how="hold", batches=[5, 4], hold=CUTOVER)) == {"on": "batch", "batches": [4, 5], "hold": CUTOVER}
+
+    def test_a_bolt_landing_on_proof_or_waiting_on_crew_waits_on_nothing_of_the_users(self):
+        """bolt-teams, Waiting on nothing of the user's; A change in no batch yet: its verification not green, a change
+        in no batch, a fix in flight, main to take first or a landing in flight, each giving the row no batches."""
+        assert plan.user_wait(facts()) == {"on": "none"}
+        assert plan.user_wait(facts(can=False)) == {"on": "none"}
+        assert plan.user_wait(facts(can=False, how="send", stays=True)) == {"on": "none"}
+        assert plan.user_wait(facts(can=False, how="hold", hold=CUTOVER)) == {"on": "none"}
+
+    def test_a_fact_crew_cant_read_is_unknown(self):
+        """bolt-teams, What crew can't read (read.1)."""
+        why = "its verification can't be read: no landing of its work at abc1234 can be read"
+        assert plan.user_wait(facts(can=False, known=why)) == {"on": "unknown", "why": why}
+        assert plan.user_wait(facts(how="send", stays=True, known=why)) == {"on": "unknown", "why": why}
+
+
+class TestWaitWords:
+    """plan.wait_words: each wait in crew's words, naming who makes the move, how, and where the user answers it, word
+    for word as bolt-teams' scenarios give them (design Decision 2)."""
+    HEAD = "abc1234" + "0" * 33
+
+    def words(self, wait, label="swancloud", kit="crew"):
+        return plan.wait_words(label, kit, wait, self.HEAD)
+
+    def test_the_send_words_say_why(self):
+        """bolt-teams, Marked to stay; Left by the user; Its land stopped."""
+        assert self.words({"on": "send", "why": "stays", "hold": None}) == SEND
+        assert self.words({"on": "send", "why": "left", "hold": None}) == (
+            "the user, by their send of its row on crew's landings card, land/crew: they left it unticked on an earlier send")
+        assert self.words({"on": "send", "why": "stopped", "hold": None}) == (
+            "the user, by their send of its row on crew's landings card, land/crew: its land at abc1234 was stopped")
+
+    def test_the_hold_words_name_the_hold_and_its_why(self):
+        """bolt-teams, Under a hold on its kit; and a hold on the whole drive."""
+        assert self.words({"on": "hold", "hold": CUTOVER}) == LIFT
+        assert self.words({"on": "hold", "hold": {"kit": None, "why": "Freeze"}}) == (
+            """the user, by lifting the hold on the landings of swancloud's every kit ("Freeze") with crew plan go: it then lands on proof""")
+
+    def test_the_batch_words_name_each_batch_and_its_card(self):
+        """bolt-teams, Waiting on a batch."""
+        assert self.words({"on": "batch", "batches": [5], "hold": None}) == "the user, by answering review batch 5 on its card, batch/5"
+        assert self.words({"on": "batch", "batches": [4, 5], "hold": None}) == (
+            "the user, by answering review batches 4 and 5 on their cards, batch/4 and batch/5")
+        assert self.words({"on": "batch", "batches": [3, 4, 5], "hold": None}) == (
+            "the user, by answering review batches 3, 4 and 5 on their cards, batch/3, batch/4 and batch/5")
+
+    def test_a_send_or_batch_under_a_hold_names_the_hold_after(self):
+        """bolt-teams, Marked to stay under a hold: the send on land/crew, then the lift of the hold on crew's landings."""
+        lift = """; then by lifting the hold on crew's landings ("Cutover") with crew plan go"""
+        assert self.words({"on": "send", "why": "stays", "hold": CUTOVER}) == SEND + lift
+        assert self.words({"on": "batch", "batches": [5], "hold": CUTOVER}) == "the user, by answering review batch 5 on its card, batch/5" + lift
+
+    def test_no_words_for_none_or_unknown(self):
+        assert self.words({"on": "none"}) is None
+        assert self.words({"on": "unknown", "why": "its verification can't be read"}) is None

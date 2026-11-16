@@ -10767,6 +10767,52 @@ def lands_by(row, stays, left, stopped, hold):
     return "hold" if hold else "proof"
 
 
+def user_wait(f):
+    """What a bolt of a land row waits on the user for (Decision 2 of a-bolt-waiting-on-the-user-waits-under-words), from
+    its row's facts alone (code.7): f, {can, how, stays, left, stop, hold, batches, known}, can whether it can land, how
+    lands_by's word, stays its Stays mark, left whether the user left it, stop what stopped its last land at its head
+    now, hold the hold standing on its kit or drive (hold_on), batches the batches the user has not answered where
+    they alone keep it from landing, else [], and known True, or why a fact it rests on can't be read. Gives {on: send,
+    why: stays, left or stopped, hold} for one that can land and lands on the user's send, under a hold or not; {on:
+    hold, hold} for one that can land on proof once a hold is lifted; {on: batch, batches, hold} for one kept only by
+    batches the user has not answered; {on: unknown, why} where a fact can't be read (read.1); else {on: none}, waiting
+    on nothing of the user's."""
+    if f.get("known") is not True:
+        return {"on": "unknown", "why": f.get("known") or "what the bolt waits on can't be told"}
+    if f.get("can") and f.get("how") == "send":
+        why = "stays" if f.get("stays") else "left" if f.get("left") else "stopped" if f.get("stop") else None
+        return {"on": "send", "why": why, "hold": f.get("hold")} if why else {"on": "none"}
+    if f.get("can") and f.get("how") == "hold":
+        return {"on": "hold", "hold": f.get("hold")}
+    if not f.get("can") and f.get("batches"):
+        return {"on": "batch", "batches": sorted(f["batches"]), "hold": f.get("hold")}
+    return {"on": "none"}
+
+
+def wait_words(label, kit, wait, head):
+    """crew's words for what a bolt waits on the user for (Decision 2 of a-bolt-waiting-on-the-user-waits-under-words;
+    flume 130: who makes the move, how, and where they answer it), from wait as user_wait gives it, the drive's label,
+    the bolt's kit and its head now: their send of its row on the kit's landings card, saying why; their lift of the
+    hold, naming what it holds (held_named) and its own words; their answer to each batch on its card; a send or a
+    batch under a hold naming the lift after. None for a bolt that waits on nothing of the user's or whose wait can't
+    be told. A decision of facts alone (code.7)."""
+    on, hold = wait.get("on"), wait.get("hold")
+    lift = (f'lifting the hold on {held_named(label, hold["kit"])} ("{hold["why"]}") with crew plan go' if hold else None)
+    if on == "send":
+        why = {"stays": "it is marked to stay", "left": "they left it unticked on an earlier send",
+               "stopped": f"its land at {(head or '')[:7]} was stopped"}[wait["why"]]
+        words = f"the user, by their send of its row on {kit}'s landings card, land/{kit}: {why}"
+    elif on == "hold" and lift:
+        return f"the user, by {lift}: it then lands on proof"
+    elif on == "batch" and wait.get("batches"):
+        ns = [str(n) for n in wait["batches"]]
+        words = ("the user, by answering review " + (f"batch {ns[0]} on its card" if len(ns) == 1 else f"batches {joined(ns)} on their cards")
+                 + ", " + joined([f"batch/{n}" for n in ns]))
+    else:
+        return None
+    return words + (f"; then by {lift}" if lift else "")
+
+
 def card_stand(bolt, head, can, card, sends):
     """How a kit's landings card stands for one bolt of its land row (crew-rail "Each bolt's land line says whether its
     card carries, holds or follows it", design Decision 8), from facts alone (code.7): the bolt, its head now and
