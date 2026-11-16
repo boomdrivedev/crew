@@ -3819,15 +3819,39 @@ class Unposted(Exception):
 def lands_posted(entries):
     """The lands crew recorded posting on the user's sends (crew-lands-each-bolt-through-flumes-base-place, Decision 4),
     from the run record's entries, oldest first: each bolt.submit or fix.merge marked Outcome asked with the land's
-    Request, not refused, as {work, card, head, request}, its work the bolt's or the fix of main's it is On."""
-    out = []
+    Request, not refused, as {work, card, head, request}, its work the bolt's or the fix of main's it is On, marked
+    waited where the run record holds that land recorded waiting (lands_waited), so it bars no land at its head and
+    spends no send (runner.lands_due; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 4)."""
+    out, waited = [], lands_waited(entries)
     for e in entries:
         if e.get("Act") not in ("bolt.submit", "fix.merge") or e.get("Refused") or not e.get("Request"):
             continue
         work = next((o for o in e.get("On") or [] if o.startswith(("bolt/", "fix/main/"))), None)
         if work:
-            out.append(dict(work=work, card=e.get("Card"), head=e.get("Head"), request=e["Request"]))
+            out.append(dict(work=work, card=e.get("Card"), head=e.get("Head"), request=e["Request"],
+                            **({"waited": True} if e["Request"] in waited else {})))
     return out
+
+
+def lands_waited(entries):
+    """The requests of the lands the run record holds recorded waiting (a-land-waits-while-a-place-on-its-bolts-branch-
+    is-live, Decision 4), from its entries, oldest first: each bolt.submit marked Outcome waiting, not refused, by its
+    Request, as text. A land that waited on the places Flume named on its bolt's branch is no land standing once Flume
+    names none (runner.landing_outcome), and bars no land and spends no send (runner.lands_due). A decision of facts
+    alone (code.7)."""
+    return {e["Request"] for e in entries if e.get("Act") == "bolt.submit" and e.get("Outcome") == "waiting"
+            and not e.get("Refused") and e.get("Request")}
+
+
+def waits(entries):
+    """Each bolt whose last landing the run record holds waiting on the places Flume named on its branch, nothing of the
+    bolt's (bolt-teams "A land refused while a place on its bolt's branch is live waits", landing_entry), from its
+    entries, oldest first: {bolt: (head, request, words)}, the head its land carried, the land's request and Flume's
+    words, from each bolt's last bolt.submit when it is marked Outcome waiting; a bolt whose last one is anything else,
+    or that has none, is not in it. A wait is no stop and no landing in flight: the send that posted it stands. A
+    decision of facts alone (code.7)."""
+    return {b: (e.get("Head") or "", e.get("Request") or "", e.get("Why") or "") for b, e in last_submits(entries).items()
+            if e.get("Outcome") == "waiting" and not e.get("Refused")}
 
 
 def lands_sent(entries, key, owner, card=None, shown=(), ticked=()):
@@ -4923,8 +4947,10 @@ def landing_entry(entries, bolt, l):
     record, oldest first; l, the landing as runner.landing_of reads it. For an outcome decided, landed, refused or
     stopped, its fields: Outcome landed or stopped, or the refusal's words as Refused, the land's Request and the Head
     its land carried, from the newest land crew posted of the bolt (lands_posted), the merge queue's entry as Submission
-    where Flume names one, and the words of a stop as Why; None for one undecided, unknown or unlaunched, and for one
-    the run record already holds at that request, so a read twice records once. A landing read on the kit's main (l
+    where Flume names one, and the words of a stop as Why; for a land that waits on the places Flume names on the
+    bolt's branch, Outcome waiting with its Request, Head and Flume's words as Why, no Refused and no Submission
+    (run-record "A land that waits on its branch is one entry marked waiting"); None for one undecided, unknown or
+    unlaunched, and for one the run record already holds at that request, so a read twice records once. A landing read on the kit's main (l
     marked by main, which only Stages.main_landing's readers build, carrying the kit, main's commit, the newest head a
     landing of it carried and the landing still pending; a-landed-bolt-is-closed-and-offered-no-more, Decision 5) is
     recorded landed with that Head, Submission and Request, which end an older crew's queued landing and, being the
@@ -4937,15 +4963,17 @@ def landing_entry(entries, bolt, l):
         return dict(Request=l.get("request") or None, Head=l.get("head") or None, Submission=l.get("submission") or None,
                     Outcome="landed", Why=f"bolt({bolt}): landed on {l.get('kit') or 'its kit'}'s main at {(l.get('commit') or '')[:7]}, "
                                           "as GitHub's main holds it")
-    if l.get("outcome") not in ("landed", "refused", "stopped"):
+    if l.get("outcome") not in ("landed", "refused", "stopped", "waiting"):
         return None
     asked = next((p for p in reversed(lands_posted(entries)) if p["work"] == f"bolt/{bolt}"), None)
     n = str(l.get("request") or (asked or {}).get("request") or "")
     mine = [e for e in entries if e.get("Act") == "bolt.submit" and f"bolt/{bolt}" in (e.get("On") or [])
-            and (e.get("Request") or "") == n and (e.get("Outcome") in ("landed", "stopped") or e.get("Refused"))]
+            and (e.get("Request") or "") == n and (e.get("Outcome") in ("landed", "stopped", "waiting") or e.get("Refused"))]
     if mine:
         return None
     fields = dict(Request=n or None, Head=(asked or {}).get("head") or None, Submission=l.get("entry"))
+    if l["outcome"] == "waiting":  # nothing of the bolt's and nothing submitted: the send that posted it stands
+        return dict(fields, Submission=None, Outcome="waiting", Why=l.get("words") or "waits on the places on its branch")
     if l["outcome"] == "landed":
         return dict(fields, Outcome="landed", Why=f"bolt({bolt}): landed on main at {(l.get('commit') or '')[:7]}, as the runner reports it")
     if l["outcome"] == "stopped":

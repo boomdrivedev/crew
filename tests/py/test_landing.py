@@ -536,6 +536,37 @@ class TestTheLandingsRecord:
         assert (got["Outcome"], got["Why"], got["Request"], got["Submission"]) == (
             "stopped", "flume refused it: a place on bolt/y is live", "2", None)
 
+    WAIT = ("flume refused the retry: the base place /Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y is "
+            "submitted once no place on its branch bolt/y is live, and /Users/chuck/.local/share/flume/places/f3a444f5e38a/"
+            "fix--y-1 is (203)")
+
+    def test_a_land_refused_while_a_place_is_named_is_recorded_waiting_once(self):
+        """run-record "A land that waits" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3): the
+        runner answered land 2 of y, posted at TIP, refused while Flume's status names fix--y-1 on bolt/y; the entry is
+        one bolt.submit marked waiting with the land's Request, its Head and Flume's words, no Refused and no
+        Submission, and a read with it recorded records nothing."""
+        l, got = self.entry("flume-0.19.0/bolt-forecast-fixing", more={}, refused={2: self.WAIT})
+        assert l["outcome"] == "waiting"
+        assert got == dict(Request="2", Head=TIP, Submission=None, Outcome="waiting", Why=self.WAIT)
+        assert plan.outcome_fields(got) == dict(Request="2", Head=TIP, Outcome="waiting", why=self.WAIT)
+        waiting = dict(ASKED, Outcome="waiting", Why=self.WAIT)
+        assert self.entry("flume-0.19.0/bolt-forecast-fixing", entries=(ASKED, waiting), more={}, refused={2: self.WAIT})[1] is None
+
+    def test_a_wait_is_no_stop_and_no_landing_in_flight(self):
+        """bolt-teams "Work joins the bolt meanwhile" and rail-cards "A send stands for a bolt whose land waits on its
+        branch" (Decisions 3 and 4): with y's land 2 recorded waiting, y is no stop and its send of req_k1 is not
+        spent, no landing is pending or in flight, so no work is held out of y, and the land is one that waited."""
+        entries = [ASKED, dict(ASKED, Outcome="waiting", Why=self.WAIT)]
+        assert plan.stops(entries) == {} and plan.send_spent(entries, "req_k1", ["y"]) == {}
+        assert plan.landing_pending(entries, "y") is None and plan.landing_phase(entries, "y") is None
+        assert plan.landing_hold(plan.landing_phase(entries, "y"), "y", "fix y--logic") is None
+        assert plan.lands_waited(entries) == {"2"}
+        assert plan.waits(entries) == {"y": (TIP, "2", self.WAIT)}
+        assert plan.lands_posted(entries) == [dict(work="bolt/y", card="req_k1", head=TIP, request="2", waited=True)] * 2
+        assert plan.lands_posted([ASKED]) == [dict(work="bolt/y", card="req_k1", head=TIP, request="2")]
+        stopped = entries + [dict(ASKED, Request="3"), dict(ASKED, Request="3", Outcome="stopped", Why="no")]
+        assert plan.waits(stopped) == {} and plan.stops(stopped) == {"y": (TIP, "no")}
+
     def test_one_recorded_already_and_one_undecided_are_recorded_nothing(self):
         _, got = self.entry("bolt-failed")
         assert self.entry("bolt-failed", entries=(ASKED, dict(ASKED, Outcome=None, Refused=got["Refused"])))[1] is None
