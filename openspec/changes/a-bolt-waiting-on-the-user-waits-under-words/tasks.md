@@ -20,5 +20,5 @@ Work the tasks in order, from the place's root. Before the first task, sync the 
 
 ## 3. The brief and the docs
 
-- [ ] 3.1 Main-level ops's brief says a proven bolt waiting on the user is held under words naming what it waits on, so no stall reaches ops for it and ops runs nothing for it, while a base place waiting on nothing of the user's still stalls (design, Decision 7; Task notes 3.1). Verify `tests/suite t-briefs` ends with "0 failed".
+- [x] 3.1 Main-level ops's brief says a proven bolt waiting on the user is held under words naming what it waits on, so no stall reaches ops for it and ops runs nothing for it, while a base place waiting on nothing of the user's still stalls (design, Decision 7; Task notes 3.1). Verify `tests/suite t-briefs` ends with "0 failed".
 - [ ] 3.2 README, the crew skill and `crew`'s usage say the rail's read holds a bolt waiting on the user under words, renewed, changed and ended with the wait, and that a hold is a request of `requests.rec` (design, Decision 7; Task notes 3.2). Verify `tests/suite t-docs t-help` ends with "0 failed".
