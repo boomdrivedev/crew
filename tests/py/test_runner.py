@@ -94,7 +94,7 @@ class TestRequests:
         assert runner.request_refusal(have, rec(2, "drop", Of=1, Words="Gone.", Stream="madswan")) == (
             "drop 2 for unit/a carries Stream, Words, which a drop does not take")
         assert runner.request_refusal([], rec(1, "reorder")) == (
-            "request 1 is a reorder, and a request is a launch, a retry, a drop, a priority, a land, a preview or a confirm")
+            "request 1 is a reorder, and a request is a launch, a retry, a drop, a priority, a land, a preview, a confirm or a hold")
 
     def test_the_work_is_named_as_crew_names_it(self):
         for work in ("bolt/b", "unit/a", "chore/bump", "fix/b/tidy", "fix/main/crew/red", "role/design/record-0053"):
@@ -250,8 +250,80 @@ class TestConfirmRequest:
         lines = runner.REQUESTS.splitlines()
         allowed = next(l for l in lines if l.startswith("%allowed:")).split()[1:]
         assert allowed[allowed.index("Words") + 1] == "Delivery" and allowed == list(runner.FIELDS)
-        assert next(l for l in lines if l.startswith("%type: Act enum")).split()[-1] == "confirm"
+        assert "confirm" in next(l for l in lines if l.startswith("%type: Act enum")).split()
         assert "or a confirm, as the role whose address is Recipient, of each Delivery" in next(l for l in lines if l.startswith("%doc:"))
+
+
+WAIT_WORDS = "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay"
+
+
+class TestHoldRequest:
+    """A hold names the launch of a bolt's base place, its words and its bound in whole seconds, and no host (drive-state
+    "A hold names a bolt's launch, its words and a bound" and "A hold is a request"; design Decision 1 of
+    a-bolt-waiting-on-the-user-waits-under-words)."""
+
+    def seven(self):
+        """requests.rec holding requests 1 to 7, request 1 the launch of bolt/x and request 4 a launch of unit a on it."""
+        x = rec(1, "launch", "bolt/x", **dict(BOLT, Name="x"))
+        return held(x, rec(2, "priority", "bolt/x", Of=1, Priority=2), rec(3, "priority", "bolt/x", Of=1, Priority=3),
+                    rec(4, "launch", "unit/a", Base="bolt/x"), *[rec(n, "priority", "unit/a", Of=4, Priority=n) for n in (5, 6, 7)])
+
+    def test_a_hold_of_a_bolts_launch_with_words_and_a_bound_is_taken(self):
+        """drive-state, A hold is a request: request 8, naming no Host."""
+        have = self.seven()
+        r = rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound=604800)
+        assert runner.request_refusal(have, r) is None
+        assert r.get("Host") is None and r.get("Bound") == "604800" and r.get("Words") == WAIT_WORDS
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=1, Words="crew ends its hold", Bound=0)) is None
+
+    def test_a_hold_of_a_units_launch_is_refused_naming_it(self):
+        """drive-state, A hold of a unit's launch."""
+        have = self.seven()
+        assert runner.request_refusal(have, rec(8, "hold", "unit/a", Of=4, Words=WAIT_WORDS, Bound=604800)) == (
+            "hold 8 for unit/a names launch 4, which is no bolt's: a hold is of a bolt's base place")
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=4, Words=WAIT_WORDS, Bound=604800)) == (
+            "hold 8 for bolt/x names launch 4, which is unit/a's")
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=2, Words=WAIT_WORDS, Bound=604800)) == (
+            "hold 8 for bolt/x names request 2, which is no launch")
+
+    def test_a_hold_with_no_words_or_no_whole_bound_is_refused(self, monkeypatch):
+        """drive-state, A hold with no words or no whole bound: refused naming what it lacks, the write's files as they were."""
+        have = self.seven()
+        need = "a hold carries Request, Act, Work, Date, By, Of, Words, Bound"
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=1, Bound=604800)) == f"hold 8 for bolt/x names no Words: {need}"
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=1, Words="", Bound=604800)) == f"hold 8 for bolt/x names no Words: {need}"
+        assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS)) == f"hold 8 for bolt/x names no Bound: {need}"
+        for bound in ("8h", "7d", "-5", "1.5", "６"):
+            assert runner.request_refusal(have, rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound=bound)) == (
+                f"hold 8 for bolt/x names Bound {bound}, which is no whole number of seconds")
+        monkeypatch.setenv("CREW_AGENT", BY)
+        w = FactsWrite("%rec: Bolt\n%key: Bolt\n")
+        assert plan.request(w, "launch", "bolt/x", **dict(BOLT, Name="x")) == 1
+        text = w.files["requests.rec"]
+        with pytest.raises(Refusal, match="^hold 2 for bolt/x names Bound 8h, which is no whole number of seconds"):
+            plan.request(w, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound="8h")
+        assert w.files["requests.rec"] == text
+
+    def test_a_hold_naming_a_host_is_refused(self):
+        """drive-state, A hold naming a host: a request acting on a launch names no host."""
+        assert runner.request_refusal(self.seven(), rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound=604800, Host="deneb")) == (
+            "hold 8 for bolt/x carries Host, which a hold does not take")
+        assert runner.request_refusal(self.seven(), rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound=604800, Stage="code")) == (
+            "hold 8 for bolt/x carries Stage, which a hold does not take")
+
+    def test_request_fields_writes_bound_after_delivery(self):
+        r = rec(8, "hold", "bolt/x", Of=1, Words=WAIT_WORDS, Bound=604800)
+        assert r.fields == [("Request", "8"), ("Act", "hold"), ("Work", "bolt/x"), ("Of", "1"), ("Words", WAIT_WORDS),
+                            ("Bound", "604800"), ("Date", AT), ("By", BY)]
+        lines = runner.REQUESTS.splitlines()
+        allowed = next(l for l in lines if l.startswith("%allowed:")).split()[1:]
+        assert allowed[allowed.index("Delivery") + 1] == "Bound" and allowed == list(runner.FIELDS)
+        assert "%type: Act enum launch retry drop priority land preview confirm hold" in lines
+        assert "%type: Bound int" in lines
+        assert "or a hold of a bolt's base place, the move it waits on held under Words for Bound seconds" in next(
+            l for l in lines if l.startswith("%doc:"))
+        assert runner.request_refusal([], rec(1, "keep", "bolt/x")) == (
+            "request 1 is a keep, and a request is a launch, a retry, a drop, a priority, a land, a preview, a confirm or a hold")
 
 
 PREVIEW = dict(Host="deneb", Repo="crew", Branch="bolt/y", Revision="abc1234" + "0" * 33)
@@ -320,7 +392,7 @@ class TestPreviewRequest:
 
     def test_the_descriptor_takes_a_preview_last_its_done_and_its_fields_after_base(self):
         lines = runner.REQUESTS.splitlines()
-        assert "%type: Act enum launch retry drop priority land preview confirm" in lines
+        assert next(l for l in lines if l.startswith("%type: Act enum")).startswith("%type: Act enum launch retry drop priority land preview")
         assert lines[lines.index("%type: Submission bool") + 1] == "%type: Done bool"
         allowed = next(l for l in lines if l.startswith("%allowed:")).split()[1:]
         assert allowed[allowed.index("Base") + 1:allowed.index("Base") + 4] == ["Branch", "Revision", "Done"]
@@ -979,6 +1051,58 @@ class TestABasePlacesStatus:
         f = self.facts("bolt-withdrawn")
         assert (f["verdict"], f["verdict_words"], f["waiting"], f["waiting_words"]) == (
             "withdrawn", None, "submission", "the merge queue withdrew the submission")
+
+
+FLUME_26 = pathlib.Path(__file__).parent / "flume-0.26.0"
+
+
+def status_26(name):
+    return json.loads((FLUME_26 / f"{name}.json").read_text())
+
+
+class TestABasePlacesHold:
+    """What flume_facts reads of the hold standing on a bolt's base place's waiting move, as flume 0.26.0 lists it
+    (tests/py/flume-0.26.0/bolt-*.json; design Decision 3 of a-bolt-waiting-on-the-user-waits-under-words; flume 130):
+    its words, since and bound, and none where it lapsed, is of another move, or lacks its words or since (read.2)."""
+    PLACE = TestABasePlacesStatus.PLACE
+
+    def facts(self, status):
+        return runner.flume_facts(status, self.PLACE)
+
+    def test_a_hold_on_the_waiting_move_is_read_with_its_words_since_and_bound(self):
+        f = self.facts(status_26("bolt-held"))
+        assert (f["waiting"], f["waiting_stage"], f["stalled"], f["entry"]) == ("unsubmitted", None, False, None)
+        assert f["waiting_hold"] == {"words": "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay",
+                                     "since": 1794700300, "bound": 604800}
+        f = self.facts(status_26("bolt-unsubmitted"))
+        assert (f["waiting"], f["waiting_since"], f["stalled"], f["waiting_hold"]) == ("unsubmitted", 1794700000, True, None)
+
+    def test_a_lapsed_hold_is_no_hold(self):
+        f = self.facts(status_26("bolt-held-lapsed"))
+        assert (f["waiting"], f["waiting_hold"], f["stalled"]) == ("unsubmitted", None, True)
+
+    @pytest.mark.parametrize("hold", [
+        {"on": "stage", "stage": "code", "words": "Wait for the user.", "since": 1794700300},
+        {"on": "submission", "words": "Wait for the user.", "since": 1794700300},
+        {"on": "waiting", "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": "", "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": ["the user"], "since": 1794700300, "bound": 604800},
+        {"on": "waiting", "words": "the user", "since": "1794700300", "bound": 604800},
+        {"on": "waiting", "words": "the user", "since": True, "bound": 604800},
+        {"on": "waiting", "words": "the user", "bound": 604800},
+        "waiting"])
+    def test_a_hold_of_another_move_or_missing_its_words_is_none(self, hold):
+        status = status_26("bolt-held")
+        status["status"]["places"][0]["holds"] = [hold]
+        assert self.facts(status)["waiting_hold"] is None
+        status["status"]["places"][0]["holds"] = {"on": "waiting"}
+        assert self.facts(status)["waiting_hold"] is None
+
+    def test_a_bound_of_another_shape_reads_none_and_the_hold_still_stands(self):
+        status = status_26("bolt-held")
+        status["status"]["places"][0]["holds"][0]["bound"] = "7d"
+        assert self.facts(status)["waiting_hold"] == {
+            "words": "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay", "since": 1794700300, "bound": None}
 
 
 FLUME_19 = pathlib.Path(__file__).parent / "flume-0.19.0"

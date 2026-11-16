@@ -154,7 +154,8 @@ class TestTheStartedBoltLands:
         assert (at["machine"], at["stream"], at["kit"]) == ("deneb", "madswan", {"name": "boomdrive-cloud", "repo": "boomdrive-cloud",
                                                                                  "main": NEW, "dir": NEW})
         rows = self.rows(w, run)
-        assert [(r["key"], r["bolts"]) for r in rows] == [("land/boomdrive-cloud", [{"bolt": STAGING, "host": "deneb", "can": False, "head": COMMIT, "stays": False}])]
+        assert [(r["key"], r["bolts"]) for r in rows] == [("land/boomdrive-cloud", [{"bolt": STAGING, "host": "deneb", "can": False, "head": COMMIT, "stays": False,
+                                                                                        "wait": {"on": "none"}}])]
         assert rows[0]["what"][1] == (f"{STAGING}, on deneb, in Flume stream madswan: {STAGING} was started before bolts were "
                                       "base places and lands under the crew that started it")
 

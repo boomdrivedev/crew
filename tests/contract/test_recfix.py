@@ -211,6 +211,37 @@ def test_a_confirm_with_two_deliveries_passes_recfix_and_an_act_the_descriptor_l
     with pytest.raises(Refusal, match="^requests.rec fails recfix --check"):
         plan.checked({"requests.rec": text.replace("Act: confirm\n", "Act: acknowledge\n", 1)})
 
+def test_a_hold_with_words_and_a_bound_passes_recfix_and_a_bound_of_no_number_is_refused():
+    """The rail's read appends a hold of a bolt's base place's launch with its words and a bound in whole seconds
+    (runner.REQUESTS; design Decision 1 of a-bolt-waiting-on-the-user-waits-under-words; drive-state "A hold is a
+    request"): recfix takes it under crew's descriptor, on a new branch and on one whose requests.rec was written under
+    the descriptor before holds and brought in step (plan.in_step, as plan.requests_of does), and refuses a Bound that is
+    no number, which Bound's int type holds."""
+    bolt = plan.Rec("Request", runner.request_fields(1, "launch", "bolt/x", dict(
+        Repo="afterthought/crew", Kind="crew/bolt", Name="x", Base="main", Priority=2, Intent="madswan/x", Recipient="madswan/ops"),
+        "2026-11-08T12:00:00Z", "madswan-ops"))
+    words = "the user, by their send of its row on crew's landings card, land/crew: it is marked to stay"
+    hold = plan.Rec("Request", runner.request_fields(2, "hold", "bolt/x", dict(Of=1, Words=words, Bound=604800),
+                                                     "2026-11-16T12:00:00Z", "madswan-ops"))
+    assert runner.request_refusal(plan.Plan(requests_text(bolt)).recs("Request"), hold) is None
+    text = requests_text(bolt, hold)
+    plan.checked({"requests.rec": text})
+    (_, got) = plan.Plan(text).recs("Request")
+    assert (got.get("Act"), got.get("Of"), got.get("Words"), got.get("Bound"), got.get("Host")) == ("hold", "1", words, "604800", None)
+    with pytest.raises(Refusal, match="^requests.rec fails recfix --check"):
+        plan.checked({"requests.rec": text.replace("Bound: 604800\n", "Bound: 8h\n", 1)})
+    before = (runner.REQUESTS.replace(" confirm hold\n", " confirm\n").replace("%type: Bound int\n", "")
+              .replace(" Delivery Bound ", " Delivery "))
+    assert before != runner.REQUESTS and not any(l.startswith("%") and "Bound" in l and not l.startswith("%doc") for l in before.splitlines())
+    old = plan.Plan(before + "\n" + "\n".join(bolt.lines()) + "\n")
+    with pytest.raises(Refusal, match="^requests.rec fails recfix --check"):
+        plan.checked({"requests.rec": old.text() + "\n" + "\n".join(hold.lines()) + "\n"})
+    assert plan.in_step(old, runner.REQUESTS)
+    old.insert(hold)
+    plan.checked({"requests.rec": old.text()})
+    assert [(r.get("Act"), r.get("Bound")) for r in old.recs("Request")] == [("launch", None), ("hold", "604800")]
+
+
 def test_a_runners_previews_file_passes_by_its_descriptor_and_an_outcome_it_does_not_allow_is_refused():
     """previews.rec as Boomdrive's runner writes it on <label>/runner/<host> (runner.PREVIEWS, held byte for byte;
     Decision 3 of a-cards-preview-is-asked-of-the-runner): a Preview of each outcome, sluice's answer (Text) and listing
