@@ -10733,6 +10733,7 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             if o == "landed":  # as the runner reports it or as its kit's main holds it: its close is crew's next read (Decision 6)
                 continue
             here = not (phase or {}).get("head") or at_head(phase["head"], head)  # the head its last land was posted at
+            waiting = None  # what its land waits on: the places Flume names on its branch (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)
             if o == "stopped" and here and not stop:  # the runner's or Flume's stop, before a read records it
                 stop = (landing.get("words") or "").strip().splitlines()[0] if (landing.get("words") or "").strip() else "stopped"
             if o == "legacy":  # it lands under the crew that started it (Decision 9)
@@ -10742,6 +10743,8 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             elif o == "unknown":  # crew can't tell it from the runner's report: said, and why (read.1)
                 lands = [landing_line(landing, phase, head, b.name()) + (": no unit, chore or fix joins it until its outcome is read"
                                                                          if phase and phase["state"] in ("queued", "again", "asked") else "")]
+            elif o == "waiting" and not lands:  # its land refused while Flume names a place on its branch: no stop, its send standing
+                waiting = landing_line(landing, phase, head, b.name())
             elif o in ("asked", "submitted") or o != "stopped" and phase and phase["state"] in ("queued", "again", "asked"):
                 said = landing_line(landing, phase, head, b.name()) or ""
                 if (held.get(l, {}).get("forms") or {}).get(b.name()) == "proof":  # its land posted on proof (Decision 7)
@@ -10758,6 +10761,10 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             elif not lands and conflict:  # forecast at this head to conflict with what main holds (main_conflict)
                 lands = [f"takes main first: forecast to conflict with main on {joined(conflict[1])}, until a fix "
                          "taking main in moves its head"]
+            elif not lands and o == "none" and landing.get("places"):  # no land of it is asked while Flume names a place there
+                places = landing["places"]
+                waiting = (f"no land of it is asked while {runner.places_said(places)} {'is' if len(places) == 1 else 'are'} live "
+                           f"on bolt/{b.name()}: crew asks the runner once none is")
             # how the bolt lands once it can (lands_by): on proof, on the user's send, or once a hold is lifted (Decision 7)
             stays = b.get("Stays") == "yes"
             left = bool(left_of(held.get(l, {}).get("left") or [], f"land/{kit_name}", {b.name(): head}))
@@ -10772,6 +10779,7 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
                 can = [("stays: can" if stays else "left by you: can" if left else "can") + f" land on your send of land/{kit_name}"] + (
                     [f"its last landing at {head[:7]} was stopped, nothing of the bolt's: {stop.rstrip('.')}; it lands on your next send"]
                     if stop else [])  # stopped_at, holding nothing
+            can += [waiting] if waiting else []  # how it lands, then what its land waits on (Decision 5)
             # how the kit's card stands for the bolt, once the run record was read, for a row the card asks about (card_stand,
             # design Decision 8)
             stand = card_stand(b.name(), head, not lands, (held[l].get("land_cards") or {}).get(f"land/{kit_name}"),
