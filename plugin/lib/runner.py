@@ -53,7 +53,8 @@ REQUESTS = """\
 # drop, priority or land of a place launched; or a preview of a branch at a
 # revision on the host whose runner took the work it serves, or its done; or a
 # confirm, for a role's address, of the ends of a place launched that the
-# role's turn took.
+# role's turn took; or a hold of a bolt's base place under its words for its
+# bound.
 # Written only by crew, each in the commit of the plan write that occasions it;
 # numbered once, and never changed or removed. The runner whose configuration
 # names a launch's Repo takes it, or for a role's the runner on its Host, and
@@ -61,10 +62,11 @@ REQUESTS = """\
 # never writes.
 
 %rec: Request
-%doc: A request for Work: a launch of a Flume place of Kind named Name, cut from Base of Repo, taken by a runner whose configuration names Repo, in the stream its host maps it to, or by Host's runner in Stream for a role's work, a bolt's own launch its base place of crew's kind crew/bolt; or a retry, drop, priority or land of the place the launch Of names launched, a land the user's send of a bolt or a fix of main, or a confirm, as the role whose address is Recipient, of each Delivery, the key of an end of that place, taken by the runner that took it.
+%doc: A request for Work: a launch of a Flume place of Kind named Name, cut from Base of Repo, taken by a runner whose configuration names Repo, in the stream its host maps it to, or by Host's runner in Stream for a role's work, a bolt's own launch its base place of crew's kind crew/bolt; or a retry, drop, priority or land of the place the launch Of names launched, a land the user's send of a bolt or a fix of main, or a confirm, as the role whose address is Recipient, of each Delivery, the key of an end of that place, or a hold of a bolt's base place, the move it waits on held under Words for Bound seconds, taken by the runner that took it.
 %key: Request
 %type: Request,Of,After,Priority int
-%type: Act enum launch retry drop priority land preview confirm
+%type: Bound int
+%type: Act enum launch retry drop priority land preview confirm hold
 %type: Kind regexp #^(change|chore|fix|crew/bolt)$#
 %type: Hold enum submission
 %type: Submission bool
@@ -72,17 +74,19 @@ REQUESTS = """\
 %type: Host regexp /^[a-z0-9][a-z0-9-]*$/
 %type: Date date
 %mandatory: Request Act Work Date By
-%allowed: Request Act Host Work Repo Kind Name Base Branch Revision Done Stream Priority Intent Recipient Hold After Brief Of Stage Submission Words Delivery Date By
+%allowed: Request Act Host Work Repo Kind Name Base Branch Revision Done Stream Priority Intent Recipient Hold After Brief Of Stage Submission Words Delivery Bound Date By
 """
 # A request's fields in the order requests.rec writes them (Decision 4's table).
 FIELDS = ("Request", "Act", "Host", "Work", "Repo", "Kind", "Name", "Base", "Branch", "Revision", "Done", "Stream", "Priority",
-          "Intent", "Recipient", "Hold", "After", "Brief", "Of", "Stage", "Submission", "Words", "Delivery", "Date", "By")
+          "Intent", "Recipient", "Hold", "After", "Brief", "Of", "Stage", "Submission", "Words", "Delivery", "Bound", "Date", "By")
 # What every request carries, and, by its act, what it must carry beside them and what else it may: a launch of a
 # role's work names its Host and Stream, and a launch of a kit's work neither, and a bolt's own launch carries no Brief
 # (request_refusal); a land names the launch it lands and nothing else (crew-lands-each-bolt-through-flumes-base-place,
 # Decision 4); a preview names the host whose runner brings it up, its repository, branch and revision, and Done: yes
 # to put it away; a confirm names the launch whose place's ends it confirms, the role's address it confirms as, and a
-# Delivery for each end's key (request_refusal).
+# Delivery for each end's key (request_refusal); a hold names the launch of a bolt's base place, the words it holds
+# the move that place waits on under, and its bound in whole seconds, and no host (design Decision 1 of
+# a-bolt-waiting-on-the-user-waits-under-words; Boomdrive's core.59).
 COMMON = ("Request", "Act", "Work", "Date", "By")
 ACTS = {
     "launch": (("Repo", "Kind", "Name", "Base", "Priority", "Intent", "Recipient", "Brief"), ("Hold", "After", "Host", "Stream")),
@@ -92,6 +96,7 @@ ACTS = {
     "land": (("Of",), ()),
     "preview": (("Host", "Repo", "Branch", "Revision"), ("Done",)),
     "confirm": (("Of", "Recipient", "Delivery"), ()),
+    "hold": (("Of", "Words", "Bound"), ()),
 }
 # The kind of a bolt's own launch, its base place: crew's kind bolt@1, named by its source (record 0056; Decision 2).
 BOLT_KIND = "crew/bolt"
@@ -155,14 +160,17 @@ def request_refusal(requests, new):
     confirm names as its Recipient the address of one of crew's roles, and at least one Delivery (Decision 4 of
     crews-role-runs-confirm-what-they-collect). A preview names the host whose runner brings it up, serves a landings
     row's bolt/<bolt> or a batch line's unit/<unit>, and is marked done by Done: yes alone (Decision 1 of
-    a-cards-preview-is-asked-of-the-runner); bolt/<bolt> is the work of the bolt's base place besides."""
+    a-cards-preview-is-asked-of-the-runner); bolt/<bolt> is the work of the bolt's base place besides. A hold names by Of
+    the launch of a bolt's base place, its Words, and a Bound in whole seconds, and no Host (Decision 1 of
+    a-bolt-waiting-on-the-user-waits-under-words)."""
     n, act, work = new.get("Request"), new.get("Act"), new.get("Work")
     want = next_request(requests)
     if number(n) != want:
         return (f"request {n} is not the next in requests.rec: it holds "
                 + (f"requests 1 to {want - 1}" if want > 2 else "request 1" if want == 2 else "none") + f", so the next is {want}")
     if act not in ACTS:
-        return f"request {n} is a {act}, and a request is a launch, a retry, a drop, a priority, a land, a preview or a confirm"
+        return (f"request {n} is a {act}, and a request is a launch, a retry, a drop, a priority, a land, a preview, a confirm "
+                "or a hold")
     need, may = needs(act, work or ""), ACTS[act][1] + (("Brief",) if act == "launch" and (work or "").startswith("bolt/") else ())
     if act == "preview" and not new.get("Host"):
         return (f"preview {n} for {work} names no Host: a preview names the host whose runner brings it up, the one whose "
@@ -202,7 +210,7 @@ def request_refusal(requests, new):
         return (f"confirm {n} for {work} names {new.get('Recipient')} as its recipient, and a confirm is for the address of one of "
                 "crew's roles, <label>/design, planner, reviewer, ops or operator")
     by = {r.get("Request"): r for r in requests}
-    if act in ("retry", "drop", "priority", "land", "confirm"):
+    if act in ("retry", "drop", "priority", "land", "confirm", "hold"):
         of = by.get(new.get("Of"))
         if of is None or of.get("Act") != "launch":
             return f"{act} {n} for {work} names request {new.get('Of')}, which is no launch" + (
@@ -212,6 +220,11 @@ def request_refusal(requests, new):
         if act == "land" and not work.startswith(("bolt/", "fix/main/")):
             return (f"land {n} for {work} names launch {of.get('Request')}, which is no bolt's or fix of main's: a land is the "
                     "user's send of a bolt or of a fix of main")
+        if act == "hold" and not work.startswith("bolt/"):
+            return (f"hold {n} for {work} names launch {of.get('Request')}, which is no bolt's: a hold is of a bolt's "
+                    "base place")
+    if act == "hold" and not re.fullmatch(r"[0-9]+", new.get("Bound")):
+        return f"hold {n} for {work} names Bound {new.get('Bound')}, which is no whole number of seconds"
     for a in new.all("After"):
         l = by.get(a)
         if l is None or l.get("Act") != "launch":
