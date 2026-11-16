@@ -11016,7 +11016,9 @@ def ticked_waits(entries, card, ticked, since=""):
     """Of the bolts the user's send on a kit's landings card (card, its id) ticked, in its order, those it still waits
     on the runner to land, from the run record's entries, oldest first: each with no bolt.land or bolt.drop of it at
     or after since, the answer's time as the record writes it, none refused, and none whose land that send posted was
-    stopped (send_spent). A decision of facts alone (code.7)."""
+    stopped (send_spent); one whose land waits on the places Flume names on its branch is still waited on, a wait
+    spending no send (waits; a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3). A decision of facts
+    alone (code.7)."""
     ended = {o[5:] for e in entries if e.get("Act") in ("bolt.land", "bolt.drop") and not e.get("Refused") and (e.get("At") or "") >= since
              for o in e.get("On") or [] if o.startswith("bolt/")}
     spent = send_spent(entries, card, [b for b in ticked if b not in ended])

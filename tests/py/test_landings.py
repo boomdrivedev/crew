@@ -3163,6 +3163,35 @@ def test_a_land_that_waited_on_a_landing_fix_lands_on_the_same_send_once_it_took
     assert plan.raise_landings(FLEET, "swancloud", "crew", acts) == "req_k1" and len(acts.posts) == 1
 
 
+def test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing():
+    """rail-cards "Ticked beside two that land" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decisions 3
+    and 4): the user sent land/flume ticking x, y and z; x and y landed, and z's land on that send, request 332, was
+    refused while Flume named fix--z-1 on bolt/z, so the run record holds it waiting. The send is not spent for z, the
+    card is left rather than closed saying z was stopped, and the sweep says it waits on the runner to land z."""
+    at = "2026-11-15T02:35:00Z"
+    answer = dict(Act="card.answer", Card="req_k1", Key="land/flume", By="flume-ops", Answer="approved",
+                  Heads="x@abc1234 y@abc1234 z@abc1234", At=at)
+    entries = [answer,
+               dict(Act="bolt.land", On=["bolt/x"], Repo="flume", Head="1" * 40, At="2026-11-15T02:50:00Z"),
+               dict(Act="bolt.land", On=["bolt/y"], Repo="flume", Head="2" * 40, At="2026-11-15T03:00:00Z"),
+               dict(Act="bolt.submit", On=["bolt/z"], Card="req_k1", Head=H1, Request="332", Outcome="asked", At="2026-11-15T02:35:26Z"),
+               dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="332", Outcome="waiting", Why=WAIT, At="2026-11-15T03:20:31Z")]
+    assert plan.stops(entries) == {} and plan.send_spent(entries, "req_k1", ["x", "y", "z"]) == {}
+    assert plan.waits(entries) == {"z": (H1, "332", WAIT)}
+    assert plan.send_waits(entries, "req_k1") == ["z"]
+    c = dict(key="land/flume", card="req_k1", by="flume-ops", answered=dict(heads=answer["Heads"], at=None))
+    assert plan.answered_waits(c, entries) == "waits on the runner to land z"
+    heads = plan.card_heads(answer["Heads"])
+    state = dict(status="answered", heads=heads, taking=set(), next=set())
+    landed = {"x": "1" * 40, "y": "2" * 40}
+    assert plan.landings_step([box("z")], state, ["x", "y", "z"], {"z"}, landed) == ("leave",)
+    # the same land recorded stopped, Flume naming no place, spends the send: the card closes naming z's stop
+    stopped = entries[:-1] + [dict(entries[-1], Outcome="stopped")]
+    assert plan.send_waits(stopped, "req_k1") == []
+    step = plan.landings_step([dict(box("z"), facts=dict(box("z")["facts"], stopped=(H1, WAIT)))], state, ["x", "y", "z"], {"z"}, landed)
+    assert step[0] == "close" and "z's landing at abc1234 was stopped" in step[1]
+
+
 def test_a_land_on_proof_that_waited_is_posted_again_on_proof(monkeypatch, capsys):
     """bolt-teams "A land on proof that waited" (Decision 4): crew's land on proof of y, not marked to stay, at abc1234
     (request 5) was refused while Flume named y-1 on bolt/y, and the run record holds it waiting. While Flume names y-1,
