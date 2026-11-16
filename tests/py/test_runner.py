@@ -1700,6 +1700,17 @@ class TestBaseDrop:
         ended = ran({1: "flume-0.19.0/bolt-fixed-landed", 2: "dropped"}, refused=refused)
         assert runner.base_drop_due(w.plan, rs, ended) == [("drop", "bolt/x", {"Of": "1"})]
 
+    def test_no_drop_asked_again_while_flume_names_a_place_on_the_branch(self, monkeypatch):
+        """bolt-teams "Not while Flume names a place on the branch" (a-land-waits-while-a-place-on-its-bolts-branch-is-
+        live, Decision 6): no piece of x is live and its base place lists no landing fix live, but Flume names
+        fix--y-notes on its branch, so its refused drop is not asked again; once Flume names none, one is."""
+        w, rs = self.dropped(monkeypatch)
+        refused = {4: "flume refused it: a place on bolt/x is live"}
+        named = ran({1: "flume-0.19.0/bolt-place-on-branch", 2: "dropped"}, refused=refused)
+        assert runner.base_drop_due(w.plan, rs, named) == []
+        clear = ran({1: "flume-0.19.0/bolt-failed-fix-due", 2: "dropped"}, refused=refused)
+        assert runner.base_drop_due(w.plan, rs, clear) == [("drop", "bolt/x", {"Of": "1"})]
+
     def test_a_bolt_still_in_the_plan_or_one_with_no_drop_is_asked_nothing(self):
         p = plan.Plan(flume_plan([("x", None, "flume")]))
         rs = held(rec(1, "launch", "bolt/x", **dict(BOLT, Name="x")), rec(2, "drop", "bolt/x", Of=1))

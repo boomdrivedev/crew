@@ -1366,9 +1366,11 @@ def base_drop_due(plan, requests, reads):
     requests.rec's records; reads, the drive's runners as crew read them. For each launch of bolt/<bolt> whose bolt
     has left the plan, that a drop names, the newest drop of it answered refused by the runner that took the launch, as
     Flume refuses one while a place on its branch is live: its drop asked again, (act, work, its fields), once no piece
-    of the bolt reads live, each piece's launch on its branch read dropped, merged, landed or refused, and no landing fix
-    of its base place is live (landing_fix; crews-bolt-kind-names-its-landing-fix, Decision 5), and once for each
-    refusal, a drop asked and not yet answered asking none. None where crew can't tell (read.1)."""
+    of the bolt reads live, each piece's launch on its branch read dropped, merged, landed or refused, no landing fix
+    of its base place is live (landing_fix; crews-bolt-kind-names-its-landing-fix, Decision 5), and Flume's status of
+    the base place names no place on its branch (flume_facts' on_branch; a-land-waits-while-a-place-on-its-bolts-
+    branch-is-live, Decision 6), whoever launched it, and once for each refusal, a drop asked and not yet answered
+    asking none. None where crew can't tell (read.1)."""
     out = []
     for l in requests:
         work = l.get("Work") or ""
@@ -1387,6 +1389,8 @@ def base_drop_due(plan, requests, reads):
         if f and f["over"]:
             continue
         if (landing_fix(f) or {}).get("live"):  # Flume refuses the drop while its landing fix is live on the branch
+            continue
+        if f and f["on_branch"]:  # and while any place it names on the branch is being made or live (flume 203)
             continue
         pieces = [p for p in requests if p.get("Act") == "launch" and p.get("Base") == work]
         if any(piece_stage(requests, reads, p)["stage"] not in ("dropped", "merged", "landed", "refused") for p in pieces):
