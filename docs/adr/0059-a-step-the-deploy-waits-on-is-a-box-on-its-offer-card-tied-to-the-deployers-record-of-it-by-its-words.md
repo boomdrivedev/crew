@@ -8,6 +8,8 @@ decision-makers: the user (swancloud record 0038, what must be true); the code s
 
 Status: the decision is the user's, swancloud record 0038, accepted on its card on 2026-10-26 (req_73b52dae13894077a094, "Approved"); its consequences name this crew chore. The choices below are the code stage's, made from record 0038, crew's rules and the deployer as it stands, each cheap to change; none is the user's alone.
 
+Amended 2026-11-16 by record 0070, boomdrive-design's: decisions 2, 3, 5 and 6, and the amendment of 2026-11-14 below, are replaced. A step of the user's is one card of its own, however many environments wait on it, and a deploy's card holds no boxes, raised only once every step it waits on is done. Decisions 1 and 4 stand.
+
 Amended 2026-11-14, boomdrive-design's, with the change a-deploy-card-is-raised-whatever-its-steps: the card is one list of at most five boxes, the fourth holding every step from the fourth on, where it had been five to a list, since Pending You refused every card of a deploy waiting on four or more steps.
 
 Deciders: the user, for what must be true: a design may list a step of the user's the deploy waits on; the deployer hands it to the offer card first; the user's word is given only once each is ticked, so the card's yes with a step unticked is not the word. The code stage, 2026-11-07, for the card's form, how crew ties the card's box to the step the deployer records, and what of it crew keeps.
