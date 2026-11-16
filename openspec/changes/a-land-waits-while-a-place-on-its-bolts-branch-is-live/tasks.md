@@ -1,0 +1,26 @@
+# Tasks
+
+Before the first task, sync the tests' venv once: `devenv shell -- moon run tests:venv`. A logic-tier check below is one pytest run, `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider <test>`, and passes when pytest reports every test it names passed. Submit nothing, and never run `wt submit --help`. The verify stage runs the repository's whole checks once every task is done.
+
+## 1. Flume's places on the bolt's branch
+
+- [ ] 1.1 crew reads the places Flume's status names on a base place's branch, none for a status that gives no list, and an entry it can't read as a place (design Decision 1; Task notes 1.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_runner.py::TestABasePlacesStatus::test_the_places_on_a_base_places_branch_are_read_as_flume_names_them"`.
+- [ ] 1.2 A land the runner refused reads waiting while Flume names a place on its bolt's branch, none once a land that waited finds no place named, and stopped otherwise (design Decisions 3 and 4; Task notes 1.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_runner.py::TestLandingOf::test_a_land_refused_while_flume_names_a_place_on_the_branch_waits_on_it" "tests/py/test_runner.py::TestLandingOf::test_a_land_that_waited_reads_none_once_flume_names_no_place" "tests/py/test_runner.py::TestLandingOf::test_a_land_refused_with_no_place_named_is_stopped"`.
+- [ ] 1.3 No land is due, on a send or on proof, while Flume names a place on the bolt's branch, and a land that waited bars no land and spends no send (design Decisions 2 and 4; Task notes 1.3). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::TestLandsDue::test_no_land_on_a_send_or_on_proof_while_flume_names_a_place_on_the_branch" "tests/py/test_landings.py::TestLandsDue::test_a_land_that_waited_is_due_again_on_its_send_and_head_once_no_place_is_named"`.
+- [ ] 1.4 A refused drop of a base place is asked again only once Flume names no place on its branch (design Decision 6; Task notes 1.4). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_runner.py::TestBaseDrop::test_no_drop_asked_again_while_flume_names_a_place_on_the_branch"`.
+
+## 2. A land that waits, in the run record
+
+- [ ] 2.1 The first read records a land refused while a place is named as one `bolt.submit` marked `Outcome: waiting`, which no reader takes for a stop or a landing in flight (design Decision 3; Task notes 2.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landing.py::TestTheLandingsRecord::test_a_land_refused_while_a_place_is_named_is_recorded_waiting_once" "tests/py/test_landing.py::TestTheLandingsRecord::test_a_wait_is_no_stop_and_no_landing_in_flight"`.
+- [ ] 2.2 The read that records a wait asks main-level ops nothing and raises no card (design Decision 3; Task notes 2.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landing.py::TestTheFirstReadActs::test_a_wait_recorded_asks_ops_nothing_and_raises_no_card"`.
+- [ ] 2.3 Every reader of a landing passes the lands that waited: a land that waited on Flume's landing fix is posted again on the same send at the head the fix moved the bolt to, and a land on proof on proof (design Decision 4; Task notes 2.3). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_land_that_waited_on_a_landing_fix_lands_on_the_same_send_once_it_took_main_in" "tests/py/test_landings.py::test_a_land_on_proof_that_waited_is_posted_again_on_proof"`.
+
+## 3. The landings card
+
+- [ ] 3.1 An answered landings card is left while a bolt it ticked waits on its branch, its send standing and the sweep still waiting on it (design Decisions 3 and 4; Task notes 3.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing"`.
+- [ ] 3.2 `crew card read land/<kit>` says a land waits on the places on its bolt's branch, with its request and Flume's words, and that the send stands (design Decision 5; Task notes 3.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_crew_card_read_says_a_land_that_waits_on_its_branch_and_that_the_send_stands"`.
+
+## 4. The views
+
+- [ ] 4.1 A landing that waits is said on the ledger's head line, each place named by its folder (design Decision 5; Task notes 4.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_board.py::TestALandingFromTheRunnersReport::test_a_landing_that_waits_names_the_places_on_its_branch"`.
+- [ ] 4.2 The rail's land line says a bolt's land waits, or that none is asked, while Flume names a place on its branch (design Decision 5; Task notes 4.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_rail.py::TestRows::test_a_bolt_whose_land_on_proof_waits_on_its_branch_says_so" "tests/py/test_rail.py::TestRows::test_a_proven_bolt_with_a_place_named_on_its_branch_says_no_land_is_asked_while_it_is_live"`.
