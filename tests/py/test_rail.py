@@ -193,11 +193,12 @@ class TestRows:
         land, = [r for r in rows(held=held) if r["group"] == "land"]
         assert land["what"][1] == f"apex-zones, on {BOX}, in Flume stream wldn: stays: can land on your send of land/{KIT}; follows: the next card under land/{KIT} carries it"
 
-    def runner_rows(self, fixture=None, answered=True, entries=(), legacy=False, p=None, forms=None):
+    def runner_rows(self, fixture=None, answered=True, entries=(), legacy=False, p=None, forms=None, refused=None, land=True):
         """apex-zones's land line with its base place as the runner on the box reports it (crew-lands-each-bolt-through-
-        flumes-base-place, Decision 10): launched, at the flume 0.17.0 fixture named (tests/py/flume-0.17.0/bolt-*.json)
-        or not yet placed; a land of it posted, answered launched or not; the run record holding entries; with legacy,
-        no launch of bolt/apex-zones at all. (its line, whether it can land, the land's request)."""
+        flumes-base-place, Decision 10): launched, at the flume 0.17.0 fixture named (tests/py/flume-0.17.0/bolt-*.json),
+        or another version's named with its folder, or not yet placed; a land of it posted, with land, answered launched
+        or not, or refused in the runner's words (refused); the run record holding entries; with legacy, no launch of
+        bolt/apex-zones at all. (its line, whether it can land, the land's request)."""
         from facts import ran
         import runner
         p = p or the_plan()
@@ -207,11 +208,13 @@ class TestRows:
         if legacy:
             requests = [r for r in requests if r.get("Work") != "bolt/apex-zones"]
         m = runner.next_request(requests)
-        requests = requests + [plan.Rec("Request", runner.request_fields(m, "land", "bolt/apex-zones", {"Of": base},
-                                                                         "2026-11-08T12:00:00Z", "wldn-ops"))]
-        launched = dict({n["unit/zone-one"]: "landed"}, **({base: f"flume-0.17.0/{fixture}"} if fixture else {}))
-        unplaced = dict({} if fixture else {base: "/flume/places/bolt--apex-zones"}, **({str(m): "-"} if answered else {}))
-        reads = ran(launched, host=BOX, label="wldn", repository="/kit/main", unplaced=unplaced, keeps=(f"WilldanGroup/{KIT}",))
+        requests = requests + ([plan.Rec("Request", runner.request_fields(m, "land", "bolt/apex-zones", {"Of": base},
+                                                                          "2026-11-08T12:00:00Z", "wldn-ops"))] if land else [])
+        named = fixture if fixture and "/" in fixture else f"flume-0.17.0/{fixture}"
+        launched = dict({n["unit/zone-one"]: "landed"}, **({base: named} if fixture else {}))
+        unplaced = dict({} if fixture else {base: "/flume/places/bolt--apex-zones"}, **({str(m): "-"} if answered and land else {}))
+        reads = ran(launched, host=BOX, label="wldn", repository="/kit/main", unplaced=unplaced, keeps=(f"WilldanGroup/{KIT}",),
+                    refused={m: refused} if refused else None)
         held = {"wldn": {"batches": [], "closed": set(), "posts": set(), "due": set(), "unanswered": {}, "refused": plan.refusals(entries),
                          "stopped": plan.stops(entries), "phases": plan.landing_phases(entries), "forms": forms or {}}}
         land, = [r for r in plan.rail_rows(FLEET, [("wldn", "WilldanGroup/crew-state", "tip", p)], survey(), [], {}, held,
@@ -237,6 +240,38 @@ class TestRows:
         assert (land["bolts"][0]["stays"], land["bolts"][0]["can"], land["asks"], land["told"], land["cmds"]) == (False, True, False, [], [])
         line, can, m = self.runner_rows(answered=False, p=unmarked(), forms={"apex-zones": "proof"})
         assert (line, can) == (f"landing on proof asked, request {m}: no unit, chore or fix joins it until its outcome is read", False)
+
+    PROOF = ("lands on proof: crew asks the runner to land it in wldn-ops's name at the next read of the rail on the main "
+             "level's host")
+
+    def test_a_bolt_whose_land_on_proof_waits_on_its_branch_says_so(self):
+        """crew-rail "Its land on proof waits" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5): crew
+        posted apex-zones's land on proof, and the runner answered it refused while Flume names its landing fix y-1 on
+        its branch; its line says it lands on proof, and that its landing at its head waits on fix--y-1 on its branch,
+        nothing of the bolt's, crew asking the runner to land it once none is live, joining no unit, chore or fix held."""
+        words = "flume refused the retry: a place on its branch is live (203)"
+        line, can, m = self.runner_rows("flume-0.19.0/bolt-forecast-fixing", answered=False, refused=words, p=unmarked(),
+                                        forms={"apex-zones": "proof"})
+        assert (line, can) == (f"{self.PROOF}; landing at d185a87 waits on fix--y-1 on its branch, nothing of the bolt's: crew asks "
+                               "the runner to land it once none is live; Flume's landing fix y-1 takes main in", True)
+        asked = [dict(Act="bolt.submit", On=["bolt/apex-zones"], Form="proof", Head=BOLT_HEAD, Request=str(m), Outcome="asked")]
+        recorded = asked + [dict(asked[0], Form=None, Outcome="waiting", Why=words)]
+        for entries in (asked, recorded):
+            assert self.runner_rows("flume-0.19.0/bolt-forecast-fixing", answered=False, refused=words, p=unmarked(),
+                                    forms={"apex-zones": "proof"}, entries=entries)[0] == line
+
+    def test_a_proven_bolt_with_a_place_named_on_its_branch_says_no_land_is_asked_while_it_is_live(self):
+        """crew-rail "No land posted yet" (Decision 5): apex-zones, not marked to stay, reads proven, no land of it stands,
+        and Flume names fix--y-notes on its branch; its line says it lands on proof, and that no land of it is asked while
+        fix--y-notes is live there, crew asking the runner once none is."""
+        line, can, _ = self.runner_rows("flume-0.19.0/bolt-place-on-branch", p=unmarked(), land=False)
+        assert (line, can) == (f"{self.PROOF}; no land of it is asked while fix--y-notes is live on bolt/apex-zones: crew asks the "
+                               "runner once none is", True)
+        marked, _, _ = self.runner_rows("flume-0.19.0/bolt-place-on-branch", land=False)
+        assert marked == (f"stays: can land on your send of land/{KIT}; no land of it is asked while fix--y-notes is live on "
+                          f"bolt/apex-zones: crew asks the runner once none is; follows: the next card under land/{KIT} carries it")
+        clear, _, _ = self.runner_rows("flume-0.19.0/bolt-forecast-fixed", p=unmarked(), land=False)
+        assert clear == self.PROOF
 
     def test_a_bolt_marked_to_stay_says_it_waits_for_the_send(self):
         """crew-rail "Marked to stay": its line says it stays and lands on the user's send of land/<kit>, its card's

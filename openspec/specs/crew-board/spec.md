@@ -598,7 +598,7 @@ The Construction lane SHALL show a bolt's landing on its ledger as the runner's 
 - **THEN** `doctor-rows`'s head line says its landing was refused in conflict, with Flume's words, and that it takes main first
 
 #### Scenario: A landing stopped
-- **WHEN** the runner answered `doctor-rows`'s land refused, a place on `bolt/doctor-rows` being live
+- **WHEN** the runner answered `doctor-rows`'s land refused, Flume naming no place on `bolt/doctor-rows`
 - **THEN** `doctor-rows`'s head line says its landing was stopped at that head, in the runner's words
 
 ### Requirement: A ledger says its bolt landed, was not closed, or lands under the crew that started it
@@ -648,3 +648,10 @@ In the planner's and main-level ops's bands, a started bolt marked to stay SHALL
 #### Scenario: No hold and no mark
 - **WHEN** no hold stands on wldn and no bolt of it is marked to stay
 - **THEN** the bands draw neither
+
+### Requirement: A ledger says its landing waits on the places on its branch
+While a bolt's land waits on the places on its branch (bolt-teams), the Construction lane SHALL say on its ledger that its landing at that head waits on those places, each named by its folder, nothing of the bolt's, and that crew asks the runner to land it once none is live.
+
+#### Scenario: A landing that waits
+- **WHEN** the runner answered `doctor-rows`'s land at `4e8d2c1` refused, Flume's status naming `fix--doctor-rows-1` on `bolt/doctor-rows`
+- **THEN** `doctor-rows`'s head line, on the lane and in the planner's band, says its landing at `4e8d2c1` waits on `fix--doctor-rows-1` on its branch, nothing of the bolt's, and that crew asks the runner to land it once none is live
