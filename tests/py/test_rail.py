@@ -629,6 +629,26 @@ class TestRows:
 
 
 class TestText:
+    def test_the_rail_names_each_hold_it_asked(self):
+        """bolt-teams, Two bolts at once: the rail's text names each hold the read asked of the runner, with its request
+        and what the bolt waits on, and each drive whose holds' write was refused (Decision 5 of
+        a-bolt-waiting-on-the-user-waits-under-words)."""
+        waits = {"held": [dict(label="wldn", bolt="apex-zones", request=52, form="send"), dict(label="wldn", bolt="beta", request=53, form="batch"),
+                          dict(label="wldn", bolt="gamma", request=54, form="hold"), dict(label="wldn", bolt="delta", request=55, form="end")],
+                 "unheld": [dict(label="wldn", why="wldn/main took no write: the push was refused")]}
+        out = text(rows(), waits=waits).splitlines()
+        i = out.index("holds asked of the runner for bolts waiting on you:")
+        assert out[i + 1:i + 5] == ["  apex-zones (wldn): hold 52, waits on your send", "  beta (wldn): hold 53, waits on your answer to a batch",
+                                    "  gamma (wldn): hold 54, waits on the hold's lift",
+                                    "  delta (wldn): hold 55, crew's hold ended: it waits on nothing of yours"]
+        assert out[out.index("holds not asked:") + 1] == "  wldn: wldn/main took no write: the push was refused"
+        out = text(rows(), waits={"held": [], "unheld": []})
+        assert "holds asked" not in out and "holds not asked" not in out
+        assert "holds asked" not in text(rows())
+        other = plan.labels_of(dict(found=[], rows=[], cards=[], unread={}, waits={"held": waits["held"] + [dict(label="madswan", bolt="z", request=1, form="send")],
+                                                                                    "unheld": []}), ["madswan"])
+        assert other["waits"] == {"held": [dict(label="madswan", bolt="z", request=1, form="send")], "unheld": []}
+
     def test_with_nothing_waiting_each_group_says_none_in_order(self):
         out = text([])
         assert [l for l in out.splitlines() if l.isalpha()] == ["proposals", "batches", "land", "operations"]

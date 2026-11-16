@@ -2,8 +2,10 @@
 a-bolt-waiting-on-the-user-waits-under-words; bolt-teams "A started bolt waiting on the user is held under words naming
 what for", "A waiting bolt's hold is posted once for its words, and again as its bound nears" and "A wait that ends
 ends crew's hold"): whether a hold of a bolt's base place is due, from crew's requests and Flume's status of the place
-as the runner carried it (runner.hold_due), on flume 0.26.0's shapes (tests/py/flume-0.26.0/). Each on plain facts
-(code.7)."""
+as the runner carried it (runner.hold_due), on flume 0.26.0's shapes (tests/py/flume-0.26.0/); what a bolt of a land
+row waits on the user for (plan.user_wait) and crew's words for it (plan.wait_words); the plan write that posts the
+holds due in ops's name (plan.holds_change); and the rail read's sweep that finds them (plan.sweep_waits), on a
+stand-in for what it reaches. Each on plain facts (code.7)."""
 import pytest
 
 from facts import ran
@@ -336,3 +338,99 @@ class TestHoldsWrite:
         assert w.files["requests.rec"] == text and (w.act, w.also, w.on) == (None, [], [])
         with pytest.raises(plan.Unposted):
             plan.holds_change(self.write(), "swancloud", [], launches())
+
+
+FLEET = {"drives": {"swancloud": {"label": "swancloud", "machine": "mac-studio"}}}
+
+
+class SweepActs:
+    """A stand-in for what sweep_waits reaches (plan.SweepActs): this host, the clock and the holds' write, each post
+    recorded in posts and answered as holds_post answers, numbered after the read's requests; or refused, with refused."""
+
+    def __init__(self, here="mac-studio", now=SINCE + DAY, refused=None):
+        self.here, self.at, self.refused, self.posts = here, now, refused, []
+
+    def host(self):
+        return self.here
+
+    def now(self):
+        import datetime
+        return datetime.datetime.fromtimestamp(self.at, datetime.timezone.utc)
+
+    def post_holds(self, label, owner, due, requests):
+        from crew import Refusal
+        self.posts.append((label, owner, due, requests))
+        if self.refused:
+            raise Refusal(self.refused)
+        n = len(requests)
+        return [dict(label=label, bolt=d["bolt"], request=n + i, form=d["form"]) for i, d in enumerate(due, start=1)]
+
+
+def bolt_row(bolt, wait, stays=False):
+    """A bolt of crew's land row as rail_rows gives it, able to land or not as its wait says."""
+    return dict(bolt=bolt, host="deneb", can=wait["on"] in ("send", "hold"), head=HEAD, stays=stays, wait=wait)
+
+
+def sweep_read(bolts, places, more=(), text=PLAN, done=()):
+    """A rail read of swancloud on its main machine once its raises acted, as test_landings' proof_read builds one: crew's
+    land row naming bolts, and swancloud's runner on deneb, having launched y's base place as request 1 and z's as 2, each
+    at the flume 0.26.0 fixture places names for it ({1 or 2: fixture}), and answered each request in done done; the
+    read's requests the launches, then more."""
+    requests = launches() + list(more)
+    reads = ran({n: f"flume-0.26.0/{f}" for n, f in places.items()}, label="swancloud", done=done)
+    land = dict(label="swancloud", group="land", key="land/crew", fixes=[], bolts=list(bolts))
+    return dict(found=[("swancloud", "afterthought/crew-state", "tip", plan.Plan(text))], rows=[land], runs={"swancloud": (requests, reads)})
+
+
+SEND_Z = {"on": "send", "why": "stays", "hold": None}
+BATCH_Y = {"on": "batch", "batches": [5], "hold": None}
+
+
+class TestSweepWaits:
+    """plan.sweep_waits: each rail read on the main level's host posts the holds due after its raises, by one write per
+    drive in ops's name, none on another host (design Decision 5; bolt-teams "The rail's read posts the holds due by one
+    plan write in ops's name")."""
+
+    def test_the_main_level_hosts_read_posts_each_hold_due_in_one_write(self):
+        """bolt-teams, Two bolts at once: y waits on the user's answer to batch 5, z on their send."""
+        acts = SweepActs()
+        read = sweep_read([bolt_row("y", BATCH_Y), bolt_row("z", SEND_Z, stays=True)], {1: "bolt-unsubmitted", 2: "bolt-unsubmitted"})
+        got = plan.sweep_waits(FLEET, read, acts)
+        (label, owner, due, requests), = acts.posts
+        assert (label, owner, requests) == ("swancloud", "swancloud-ops", read["runs"]["swancloud"][0])
+        assert due == [item("y", "batch", BATCH), item("z", "send", SEND, stays=True)]
+        assert got == {"held": [dict(label="swancloud", bolt="y", request=3, form="batch"), dict(label="swancloud", bolt="z", request=4, form="send")],
+                       "unheld": []}
+
+    def test_a_read_on_another_host_posts_none(self):
+        """bolt-teams, Another host's read."""
+        acts = SweepActs(here="deneb")
+        read = sweep_read([bolt_row("y", BATCH_Y), bolt_row("z", SEND_Z, stays=True)], {1: "bolt-unsubmitted", 2: "bolt-unsubmitted"})
+        assert plan.sweep_waits(FLEET, read, acts) == {"held": [], "unheld": []} and acts.posts == []
+
+    def test_a_bolt_waiting_on_crew_or_unknown_posts_nothing(self):
+        """bolt-teams, Waiting on nothing of the user's; What crew can't read: no words and no end."""
+        acts = SweepActs()
+        unknown = {"on": "unknown", "why": "its verification can't be read: no head crew can read"}
+        read = sweep_read([bolt_row("y", {"on": "none"}), bolt_row("z", unknown, stays=True)], {1: "bolt-unsubmitted", 2: "bolt-held"},
+                          more=[plan.Rec("Request", runner.request_fields(3, "hold", "bolt/z", dict(Of=2, Words=SEND, Bound=runner.HOLD_BOUND), AT, BY))],
+                          done=[3])
+        assert plan.sweep_waits(FLEET, read, acts) == {"held": [], "unheld": []} and acts.posts == []
+
+    def test_a_bolt_no_longer_waiting_under_crews_words_is_ended(self):
+        """bolt-teams, The bolt no longer waits on the user: y waited on the user's send under crew's hold, which still
+        stands on its base place, and now waits on nothing of theirs."""
+        acts = SweepActs()
+        hold = plan.Rec("Request", runner.request_fields(3, "hold", "bolt/y", dict(Of=1, Words=SEND, Bound=runner.HOLD_BOUND), AT, BY))
+        read = sweep_read([bolt_row("y", {"on": "none"})], {1: "bolt-held"}, more=[hold], done=[3])
+        got = plan.sweep_waits(FLEET, read, acts)
+        (_, _, due, _), = acts.posts
+        assert due == [item("y", "end", runner.HOLD_ENDED, bound=0)]
+        assert got["held"] == [dict(label="swancloud", bolt="y", request=4, form="end")]
+
+    def test_a_refused_write_is_said_and_the_read_goes_on(self):
+        acts = SweepActs(refused="swancloud/main took no write: the push was refused five times")
+        read = sweep_read([bolt_row("z", SEND_Z, stays=True)], {2: "bolt-unsubmitted"})
+        assert plan.sweep_waits(FLEET, read, acts) == {"held": [], "unheld": [
+            dict(label="swancloud", why="swancloud/main took no write: the push was refused five times")]}
+        assert len(acts.posts) == 1

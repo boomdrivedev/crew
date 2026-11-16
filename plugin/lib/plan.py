@@ -11509,7 +11509,8 @@ def rail_read(fleet, labels, board=False, sweep=False):
     With sweep, once the rows are made, the cards on this host are swept under its sign-in (sweep_cards), against the
     proposals the plans read hold (proposals_held), the cards read then being those open once it acted, each kit's
     landings card main moved under, whose answer the sweep recorded, or that does not offer a row of its land row as
-    it stands is raised again (sweep_moved), the done of each preview crew asked for whose card or
+    it stands is raised again (sweep_moved), each bolt waiting on the user has its base place held under words naming
+    what it waits on, after those raises (sweep_waits), the done of each preview crew asked for whose card or
     row is gone is written and each card whose preview the runner reports anew is changed in place, on the drive's
     main machine (sweep_previews, previews_changed), and the card sessions whose card is closed or whose row is gone are
     ended on every host of the labels read; what the sweeps did, and which hosts were not checked, are in the read
@@ -11542,6 +11543,7 @@ def rail_read(fleet, labels, board=False, sweep=False):
         read["cards"] = swept_cards(read["cards"], read["swept"], crew.this_host(), datetime.datetime.now(datetime.timezone.utc),
                                     read["kits"])
         read["moved"] = sweep_moved(fleet, read)
+        read["waits"] = sweep_waits(fleet, read)
         read["previews"] = sweep_previews(fleet, read)
         read["previewed"] = previews_changed(fleet, read)
         read["ended"], read["unchecked"] = sweep_sessions(fleet, found, sv, read["rows"], read["cards"], unread, batched, runs=runs)
@@ -11562,6 +11564,12 @@ def swept_cards(cards_, swept, here, now, kits=()):
         for d in swept["done"] if d.get("new")]
 
 
+# What the rail's text says a hold sweep_waits asked holds the bolt for, by its form (Decision 5 of
+# a-bolt-waiting-on-the-user-waits-under-words).
+HOLD_SAID = {"send": "waits on your send", "hold": "waits on the hold's lift", "batch": "waits on your answer to a batch",
+             "end": "crew's hold ended: it waits on nothing of yours"}
+
+
 def rail_text(fleet, labels, read, now):
     """The rail as crew rail prints it, from a read rail_read made: its groups in order, each row with when it began to
     wait, how long ago that was, what it is, each bolt's line of a kit's landing row ending with the bolt's age and who
@@ -11580,7 +11588,9 @@ def rail_text(fleet, labels, read, now):
     a read that swept, each card the sweep closed, withdrew, recorded lost or posted, and each batch it
     closed or left with no card, named so, each drive it changed nothing for and why, each landings card raised
     again as main moved under it, on the user's send, or for the rows it did not offer as they stand, naming them, and
-    each whose kit's revision of main can't be read (sweep_moved), each card session ended,
+    each whose kit's revision of main can't be read (sweep_moved), each hold asked of the runner for a bolt waiting on
+    the user, with its request and what it waits on, and each drive whose holds' write was refused (sweep_waits), each
+    card session ended,
     with its host and why, each reading the user sent whose owner it told or that it recorded read, and each host whose
     sessions were not checked. A host is named as not answering only when it holds a bolt of the plans read, so a read
     that surveyed more (the board's) gives the same text. Of a read of several drives, labels may name some: the
@@ -11676,6 +11686,10 @@ def rail_text(fleet, labels, read, now):
         ["", "landings cards whose main can't be read:"] + [
             f"  land/{u['kit']} ({u['label']}): whether main moved under it can't be told: {u['why']}" for u in moved["unread"]]
         if moved["unread"] else [])
+    waits = read.get("waits") or {"held": [], "unheld": []}
+    lines += (["", "holds asked of the runner for bolts waiting on you:"] + [
+        f"  {h['bolt']} ({h['label']}): hold {h['request']}, " + HOLD_SAID[h["form"]] for h in waits["held"]] if waits["held"] else []) + (
+        ["", "holds not asked:"] + [f"  {u['label']}: {u['why']}" for u in waits["unheld"]] if waits["unheld"] else [])
     gone = [f"  {x['work']} at {x['revision'][:7]} ({x['label']}): {x['said']}" for x in read.get("previews") or []]
     told = [f"  {x['key']} ({x['label']}): {x['note']}" + (f"; {x['said']}" if x.get("said") else "") for x in read.get("previewed") or []]
     lines += (["", "previews put away, their card or row gone:"] + gone if gone else []) + (
@@ -11714,12 +11728,13 @@ def labels_of(read, labels):
     they could not check, each of those labels'; the survey stays whole, since a host serves every drive."""
     labels = set(labels)
     swept = read.get("swept")
-    moved = read.get("moved")
+    moved, waits = read.get("moved"), read.get("waits")
     return dict(read, found=[f for f in read["found"] if f[0] in labels], rows=[r for r in read["rows"] if r["label"] in labels],
                 cards=[c for c in read["cards"] if c["label"] in labels], unread={l: v for l, v in read["unread"].items() if l in labels},
                 logs={l: v for l, v in (read.get("logs") or {}).items() if l in labels},
                 swept=swept and {"done": [d for d in swept["done"] if d["label"] in labels], "unswept": [u for u in swept["unswept"] if u["label"] in labels]},
                 moved=moved and {k: [x for x in v if x["label"] in labels] for k, v in moved.items()},
+                waits=waits and {k: [x for x in v if x["label"] in labels] for k, v in waits.items()},
                 ended=[e for e in read.get("ended") or [] if e["label"] in labels],
                 previews=[x for x in read.get("previews") or [] if x["label"] in labels],
                 previewed=[x for x in read.get("previewed") or [] if x["label"] in labels],
@@ -15036,6 +15051,49 @@ def sweep_moved(fleet, read, acts=None):
             except Refusal as e:
                 moved["said"] = str(e)
             out["raised"].append(moved)
+    return out
+
+
+def sweep_waits(fleet, read, acts=None):
+    """The rail read's holds of the bolts waiting on the user (Decision 5 of a-bolt-waiting-on-the-user-waits-under-words;
+    bolt-teams "A started bolt waiting on the user is held under words naming what for"), after its raises (sweep_moved),
+    on the drive's main machine alone: for each drive whose plan and runners were read, each bolt of its land rows whose
+    wait crew can tell (user_wait), its base place's launch (runner.launch_of), its words (wait_words), none where it
+    waits on nothing of the user's, and the hold due of it (runner.hold_due) by the read's requests and runners and the
+    clock (SweepActs.now); the holds due of a drive posted by one plan write in its ops's name (CardActs.post_holds),
+    each carrying the facts its words were made under, its Stays mark and the hold on its kit or drive (hold_on), so the
+    write re-checks them at its tip. A write refused is said, and the read goes on. Returns {held: [{label, bolt,
+    request, form}], unheld: [{label, why}]}."""
+    acts = acts or SweepActs(fleet)
+    here, out = acts.host(), {"held": [], "unheld": []}
+    now = int(acts.now().timestamp())
+    for l, _, _, pl in read["found"]:
+        run = (read.get("runs") or {}).get(l)
+        if not pl or not run or crew.drive_of(fleet, l)["machine"] != here:
+            continue
+        requests, reads = run
+        due = []
+        for r in read["rows"]:
+            if r.get("group") != "land" or r["label"] != l:
+                continue
+            kit = r["key"].split("/", 1)[1]
+            for x in r.get("bolts") or []:
+                wait = x.get("wait")
+                if not wait or wait["on"] == "unknown":  # crew can't tell what it waits on: neither words nor an end (read.1)
+                    continue
+                launch = runner.launch_of(requests, f"bolt/{x['bolt']}")
+                got = runner.hold_due(launch, wait_words(l, kit, wait, x["head"]), requests, reads, now)
+                if got is None:
+                    continue
+                form = "end" if got[0] == "end" else wait["on"]
+                due.append(dict(bolt=x["bolt"], kit=kit, launch=launch.get("Request"), head=x["head"], form=form, words=got[1],
+                                bound=0 if form == "end" else runner.HOLD_BOUND, stays=bool(x.get("stays")), hold=hold_on(pl, kit)))
+        if not due:
+            continue
+        try:
+            out["held"] += acts.post_holds(l, f"{l}-ops", due, requests)
+        except Refusal as e:
+            out["unheld"].append(dict(label=l, why=str(e)))
     return out
 
 
