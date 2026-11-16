@@ -980,6 +980,21 @@ class TestABasePlacesStatus:
         assert (f["verdict"], f["verdict_words"], f["waiting"], f["waiting_words"]) == (
             "withdrawn", None, "submission", "the merge queue withdrew the submission")
 
+    def test_the_places_on_a_base_places_branch_are_read_as_flume_names_them(self):
+        """bolt-teams "No land is posted while Flume names a place on the bolt's branch" (a-land-waits-while-a-place-on-
+        its-bolts-branch-is-live, Decision 1): on_branch is the list Flume's status gives, each place as Flume names it;
+        none named once Flume lists none; None from flume 0.17.0's status, which gives no list; and an entry that is no
+        text kept as a place crew can't read, so it still counts."""
+        def on(name, status=None):
+            return runner.flume_facts(status or status_19(name), Y)["on_branch"]
+        assert on("bolt-forecast-fixing") == (Y_FIX,)
+        assert on("bolt-forecast-fixed") == ()
+        assert on("bolt-place-on-branch") == ("/Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-notes",)
+        assert self.facts("bolt-submitted")["on_branch"] is None
+        status = status_19("bolt-forecast-fixing")
+        status["status"]["places"][0]["on_branch"].append(7)
+        assert on(None, status) == (Y_FIX, "a place crew can't read")
+
 
 FLUME_19 = pathlib.Path(__file__).parent / "flume-0.19.0"
 Y = "/Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y"
