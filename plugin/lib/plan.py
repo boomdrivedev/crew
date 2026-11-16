@@ -10603,7 +10603,11 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
     stays. The row carries told, the bolts of the kit landed on proof still to be told on its card ([{bolt, commit,
     at}], held's told), each a line of its own, a kit with one and nothing waiting a row of its own (crew-rail "A kit's
     row under land holds the bolts its card tells"), asks, whether its card has a row to ask about or a bolt to tell,
-    and lands, how each bolt lands, {bolt: lands_by's word}."""
+    and lands, how each bolt lands, {bolt: lands_by's word}. Each bolt carries too wait, what it waits on the user
+    for (user_wait; Decision 2 of a-bolt-waiting-on-the-user-waits-under-words): its batches those the user has not
+    answered where its verification is green, every unit's latest change has been in a batch and no later line
+    replaced the batch line, and crew can't tell it where its verification or its landing is unknown or its drive's
+    batches can't be read."""
     rows, here, held = [], crew.this_host(), held or {}
     for d in props:
         l, n = d["label"], d["proposal"]
@@ -10652,14 +10656,20 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             unread = sorted({waits[u.name()] for u in units if u.name() in waits})
             bk = k["bolts"].get(b.name(), {})
             state, verdict = st.verification(b, head, bk.get("head_landing"))
+            # what the bolt waits on the user for, read from these same facts (user_wait; Decision 2 of
+            # a-bolt-waiting-on-the-user-waits-under-words): the batches alone keeping it, or why crew can't tell
+            known, batches = True, []
             if state != "green":  # a bolt's proof is its verification (record 0025, tests.5)
                 lands = [f"lands once its verification is green; now {verdict}"]
+                known = f"its verification can't be read: {verdict}" if state == "unknown" else True
             elif due is None and l in held:
                 lands = [f"whether every unit's latest change has been in a batch can't be told: {l}/main could not be read"]
+                known = lands[0]
             else:  # in a batch whose card the user has answered (briefs.12)
                 lands = ([f"lands once {either(outside)} " + ("has" if len(outside) == 1 else "have") + " been in a batch, which is due for them"]
                          if outside else []) + ([f"lands once you have answered batch{'' if len(unread) == 1 else 'es'} "
                                                  f"{joined([str(n) for n in unread])}"] if unread else [])
+                batches = list(unread) if not outside else []
             # A started bolt holds its fixes as Flume places, read from the runner's records (Decision 10).
             fixes = sorted(w for w, _, s in st.fixes(b) if s["stage"] not in ("merged", "landed", "dropped")) if b.get("Path") == "flume" else []
             refused = held_at(held.get(l, {}).get("refused") or {}, b.name(), head)
@@ -10676,6 +10686,11 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             here = not (phase or {}).get("head") or at_head(phase["head"], head)  # the head its last land was posted at
             if o == "stopped" and here and not stop:  # the runner's or Flume's stop, before a read records it
                 stop = (landing.get("words") or "").strip().splitlines()[0] if (landing.get("words") or "").strip() else "stopped"
+            if o in ("legacy", "unknown") or o == "refused" and here or o in ("asked", "submitted") or (
+                    o != "stopped" and phase and phase["state"] in ("queued", "again", "asked")):
+                batches = []  # a line after the batch line replaces it: no batch alone keeps the bolt
+            if o == "unknown":
+                known = f"its landing can't be read: {landing.get('why') or 'the runner reports it unknown'}"
             if o == "legacy":  # it lands under the crew that started it (Decision 9)
                 lands = [landing["words"]]
             elif o == "refused" and here:  # Flume refused it at this head, recorded or not: held in Flume's words (rail-cards)
@@ -10717,8 +10732,9 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
             # design Decision 8)
             stand = card_stand(b.name(), head, not lands, (held[l].get("land_cards") or {}).get(f"land/{kit_name}"),
                                (held[l].get("sends") or {}).get(f"land/{kit_name}") or {}) if l in held and how == "send" else None
+            wait = user_wait(dict(can=not lands, how=how, stays=stays, left=left, stop=stop, hold=hold, batches=batches, known=known))
             kits.setdefault(kit_name, []).append(
-                dict(bolt=b.name(), host=host, at=at, can=not lands, head=head, stays=stays, how=how, line=f"{b.name()}, on {host}"
+                dict(bolt=b.name(), host=host, at=at, can=not lands, head=head, stays=stays, how=how, wait=wait, line=f"{b.name()}, on {host}"
                      + (f", {path}" if path else "") + ": " + "; ".join((lands or can) + ([stand_said(stand, kit_name, l, head)] if stand else []))))
         waiting = {}
         for f in runner.main_fixes_waiting(*(runs or {}).get(l, ([], {}))):
@@ -10742,7 +10758,7 @@ def rail_rows(fleet, found, sv, props, times, held=None, runs=None):
                              at=min([utc(x["at"]) for x in bolts] + [f["at"] for f in fixes] + [utc(t["at"]) for t in landed if t["at"]]
                                     or [utc(datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))]),
                              doc=None, what=what, cmds=[],
-                             bolts=[{k_: x[k_] for k_ in ("bolt", "host", "can", "head", "stays")} for x in bolts],
+                             bolts=[{k_: x[k_] for k_ in ("bolt", "host", "can", "head", "stays", "wait")} for x in bolts],
                              fixes=[{k_: f[k_] for k_ in ("fix", "host", "can", "send")} for f in fixes], told=landed, asks=asks,
                              lands={x["bolt"]: x["how"] for x in bolts}))
     return rows

@@ -124,7 +124,8 @@ class TestRows:
         assert (land["key"], land["at"]) == (f"land/{KIT}", plan.utc(iso(30)))
         assert land["what"] == [self.HEAD, f"apex-zones, on {BOX}, in Flume stream wldn: stays: can land on your send of land/{KIT}"]
         assert land["cmds"] == []
-        assert land["bolts"] == [dict(bolt="apex-zones", host=BOX, can=True, head=BOLT_HEAD, stays=True)]
+        assert land["bolts"] == [dict(bolt="apex-zones", host=BOX, can=True, head=BOLT_HEAD, stays=True,
+                                      wait={"on": "send", "why": "stays", "hold": None})]
 
     def two_bolts(self, merged):
         """apex-zones, proven, and beta, started after it, whose unit b-one has merged or not, both of switchboard-kit."""
@@ -560,6 +561,45 @@ class TestRows:
         assert land["what"][1:] == [f"apex-zones, on {BOX}, in Flume stream wldn: lands once zone-one has been in a batch, which is due for them; "
                                     "lands once you have answered batches 8 and 9"]
         assert land["cmds"] == []
+
+    def test_each_land_row_bolt_carries_what_it_waits_on(self):
+        """bolt-teams "A started bolt waiting on the user is held under words naming what for" (Decision 2 of
+        a-bolt-waiting-on-the-user-waits-under-words): apex-zones marked to stay and able to land waits on the user's
+        send; kept by batch 5 alone, on their answer to it; not marked and under a hold on its kit, on the hold's lift;
+        its verification not green, on nothing of theirs, as with a unit's change due a batch too."""
+        land, = self.proof_rows(the_plan())
+        assert land["bolts"][0]["wait"] == {"on": "send", "why": "stays", "hold": None}
+        land, = self.proof_rows(the_plan(), unanswered={"zone-one": 5})
+        assert (land["bolts"][0]["can"], land["bolts"][0]["wait"]) == (False, {"on": "batch", "batches": [5], "hold": None})
+        land, = self.proof_rows(the_plan(), unanswered={"zone-one": 5}, due={"zone-one"})
+        assert land["bolts"][0]["wait"] == {"on": "none"}
+        kit = plan.Plan(unmarked().text() + "\n%rec: Hold\n\nKit: switchboard-kit\nWhy: Cutover\n")
+        land, = self.proof_rows(kit)
+        assert land["bolts"][0]["wait"] == {"on": "hold", "hold": {"kit": KIT, "why": "Cutover"}}
+        land, = self.proof_rows(plan.Plan(the_plan().text() + "\n%rec: Hold\n\nKit: switchboard-kit\nWhy: Cutover\n"), unanswered={"zone-one": 5})
+        assert land["bolts"][0]["wait"] == {"on": "batch", "batches": [5], "hold": {"kit": KIT, "why": "Cutover"}}
+        sv = survey()
+        sv[BOX]["kits"]["/kit/main"]["bolts"]["apex-zones"]["head_landing"] = {"submissions": [], "results": []}
+        sv[BOX]["kits"]["/kit/main"]["bolts"]["apex-zones"]["head"] = "c" * 40
+        held = {"wldn": dict(self.HELD, unanswered={"zone-one": 5})}
+        land, = [r for r in plan.rail_rows(FLEET, [("wldn", "WilldanGroup/crew-state", "tip", the_plan())], sv, [], {}, held, runs())
+                 if r["group"] == "land"]
+        assert (land["bolts"][0]["can"], land["bolts"][0]["wait"]) == (False, {"on": "none"})
+
+    def test_a_land_row_bolt_whose_verification_cant_be_read_waits_on_what_crew_cant_tell(self):
+        """bolt-teams, What crew can't read (read.1): its verification unknown, or whether its units' latest changes have
+        been in a batch."""
+        sv = survey()
+        bolt = sv[BOX]["kits"]["/kit/main"]["bolts"]["apex-zones"]
+        bolt.update(head="c" * 40, head_landing={"error": "git log of cccccccc failed"})
+        land, = [r for r in plan.rail_rows(FLEET, [("wldn", "WilldanGroup/crew-state", "tip", the_plan())], sv, [], {},
+                                           {"wldn": dict(self.HELD)}, runs()) if r["group"] == "land"]
+        wait = land["bolts"][0]["wait"]
+        assert wait["on"] == "unknown" and wait["why"].startswith("its verification can't be read: its head ccccccc is no landing")
+        assert wait["why"].endswith("git log of cccccccc failed")
+        land, = self.proof_rows(the_plan(), due=None)
+        assert land["bolts"][0]["wait"] == {"on": "unknown", "why": "whether every unit's latest change has been in a batch can't be told: "
+                                                                     "wldn/main could not be read"}
 
     def test_a_proposal_is_timed_by_its_entry_else_its_opened_date_and_waits_on_the_user_alone(self):
         p1, p2 = [r for r in rows([proposal(1), proposal(2)], times={("wldn", "proposal/1"): NOW}) if r["group"] == "proposals"]
@@ -2556,7 +2596,8 @@ class TestCrossedLandings:
         """crew-rail "A crossed bolt proven": a, b and c merged by the runner's records and sluice green at x's head."""
         rows = self.rows({1: "landed", 2: "landed", 3: "landed"})
         assert [(r["key"], r["what"][1:], r["bolts"]) for r in rows] == [
-            ("land/crew", ["x, on deneb, in Flume stream madswan: stays: can land on your send of land/crew"], [{"bolt": "x", "host": "deneb", "can": True, "head": BOLT_HEAD, "stays": True}])]
+            ("land/crew", ["x, on deneb, in Flume stream madswan: stays: can land on your send of land/crew"], [{"bolt": "x", "host": "deneb", "can": True, "head": BOLT_HEAD, "stays": True,
+                                                                                          "wait": {"on": "send", "why": "stays", "hold": None}}])]
         assert rows[0]["cmds"] == []
 
     def test_a_piece_the_runner_reads_unmerged_keeps_it_off_the_row(self):
