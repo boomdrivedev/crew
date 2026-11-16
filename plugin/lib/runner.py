@@ -1606,7 +1606,7 @@ def fix_clause(l):
 def landing_said(l, bolt=None, head=None):
     """A landing (landing_of) in the words of its head line and its row (Decision 10): asked with its request;
     under test or waiting with the merge queue's entry; landed at its commit; refused in Flume's words; stopped in the
-    runner's or Flume's; unknown with why; "" for none, unlaunched (base_said) and dropped. Given the bolt and the head
+    runner's or Flume's; waiting on the places Flume names on its branch, each by its folder (places_said); unknown with why; "" for none, unlaunched (base_said) and dropped. Given the bolt and the head
     its land was posted at, the words a view shows say that head and what comes next (bolt-teams "A landing that is the
     bolt's says what comes next on its head line"): a failed check, that the bolt is open for work and ops starts a fix
     on it with Flume's words, crew fix <bolt> <name> "<words>"; a conflict, that it takes main first, by the fix crew
@@ -1639,8 +1639,10 @@ def landing_said(l, bolt=None, head=None):
 
 
 def outcome_said(l, o, first, at):
-    """landing_said's words for a landing neither refused nor landing again: asked, submitted, landed, stopped, unknown,
-    or "" for any other."""
+    """landing_said's words for a landing neither refused nor landing again: asked, submitted, landed, stopped, waiting,
+    unknown, or "" for any other. A wait is said at the head its land carried, where given, naming the places Flume
+    names on the branch, nothing of the bolt's, and that crew asks the runner to land it once none is live
+    (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)."""
     if o == "asked":
         return f"landing asked, request {l['request']}"
     if o == "submitted":
@@ -1650,9 +1652,19 @@ def outcome_said(l, o, first, at):
         return f"landed at {(l.get('commit') or '')[:7]}"
     if o == "stopped":
         return f"landing stopped{at}, nothing of the bolt's: {first}"
+    if o == "waiting":
+        return (f"landing{at} waits on {places_said(l.get('places'))} on its branch, nothing of the bolt's: crew asks the "
+                "runner to land it once none is live")
     if o == "unknown":
         return f"can't tell its landing: {l.get('why')}"
     return ""
+
+
+def places_said(places):
+    """The places Flume names on a bolt's branch (flume_facts' on_branch) as a view names them: each by its folder, the
+    last part of Flume's path, as Flume's own line names a place, a and b, or a, b and c; "a place" for none."""
+    names = [os.path.basename(p.rstrip("/")) or p for p in places or ()]
+    return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0] if names else "a place"
 
 
 def lands_due(rows, sent, requests, reads, posted=(), work=None):

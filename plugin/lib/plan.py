@@ -4881,7 +4881,9 @@ def landing_line(landing, phase, head, bolt=None):
     commit; refused, at the head its land was posted at, while that is the bolt's head now, in Flume's words with what
     comes next, the bolt open for work and ops's fix for a failed check, or that it takes main first for a conflict
     (runner.landing_said, given the bolt), whether or not the run record holds it yet, and nothing once a fix has moved
-    the head, the refusal holding nothing; stopped at that head, in its words; unknown, why; a bolt started before bolts
+    the head, the refusal holding nothing; stopped at that head, in its words; waiting at that head on the places Flume
+    names on its branch, crew landing it once none is live (a-land-waits-while-a-place-on-its-bolts-branch-is-live,
+    Decision 5); unknown, why; a bolt started before bolts
     were base places, that it lands under the crew that started it; else the run record's words (phase_said); None for
     nothing to say. A decision of facts alone (code.7)."""
     o = (landing or {}).get("outcome")
@@ -4893,7 +4895,7 @@ def landing_line(landing, phase, head, bolt=None):
         return f"landing again as #{landing['entry']}, {state}, after {rejected_said(*phase['rejected'])} was refused"
     if o in ("asked", "submitted", "landed", "unknown"):
         return runner.landing_said(landing)
-    if o == "stopped":
+    if o in ("stopped", "waiting"):
         return runner.landing_said(landing, head=at or head)
     if o == "refused":
         if at and head and not at_head(at, head):
