@@ -1474,29 +1474,39 @@ def caller_said(l, bolt):
     return f"Flume ran {fix.get('ran', 0)} {of}landing fixes on bolt {bolt}{bound}, and its landing was refused: {words}"
 
 
-def landing_of(launch, lands, reads):
-    """A bolt's landing as landing_outcome reads it, with its base place's landing fix (crews-bolt-kind-names-its-
-    landing-fix, Decision 3) as fix wherever Flume's status of the base place names one (landing_fix), and, for a
-    refusal, whose its way on is as fix's by (landing_way), {by: crew} where the status names no fix kind."""
-    l = landing_outcome(launch, lands, reads)
-    lf = landing_fix(base_facts(launch, reads))
+def landing_of(launch, lands, reads, waited=()):
+    """A bolt's landing as landing_outcome reads it, given waited, the lands the run record holds recorded waiting
+    (plan.lands_waited), with its base place's landing fix (crews-bolt-kind-names-its-landing-fix, Decision 3) as fix
+    wherever Flume's status of the base place names one (landing_fix), and, for a refusal, whose its way on is as
+    fix's by (landing_way), {by: crew} where the status names no fix kind; and with places, the places Flume names on
+    the bolt's branch (flume_facts' on_branch), wherever it names any, so a view says what holds its land
+    (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5)."""
+    l = landing_outcome(launch, lands, reads, waited)
+    f = base_facts(launch, reads)
+    lf = landing_fix(f)
+    if f and f.get("on_branch") and "places" not in l:
+        l = dict(l, places=list(f["on_branch"]))
     if l["outcome"] == "refused":
         return dict(l, fix=landing_way(lf, l.get("entry")))
     return dict(l, fix=lf) if lf else l
 
 
-def landing_outcome(launch, lands, reads):
+def landing_outcome(launch, lands, reads, waited=()):
     """A bolt's landing, or a fix of main's, as the runner reports it (crew-lands-each-bolt-through-flumes-base-place,
     Decision 6; bolt-teams "A landing's outcome is read from the runner's report"), from plain facts: launch, the
     newest launch not dropped of bolt/<bolt> or fix/main/<kit>/<name> (launch_of); lands, the land requests of it
-    (lands_of); reads, the drive's runners as crew read them (host_read's, by host). The base place is read from
+    (lands_of); reads, the drive's runners as crew read them (host_read's, by host); waited, the requests of the lands
+    the run record holds recorded waiting (plan.lands_waited). The base place is read from
     the runner that took the launch, its answers to the launch and the lands and Flume's status of the place as it
     carried it (flume_facts), each fact guarded (read.2). Returns {"outcome", and what goes with it}:
     unlaunched, with the runner's words, while the launch is unanswered, held or refused; landed, with Flume's commit,
     the merge queue's entry where Flume names one and the newest land's request, once the place is over landed; dropped, once it is over dropped; none, while no land stands; asked, with the
     newest land's request, while the runner has not answered it or Flume has not submitted it yet, the place's
-    submissions fewer than the lands the runner carried; stopped, in the runner's words, when it answered the newest
-    land refused, as when a place on the branch is live; submitted, with the merge queue's entry and its state, while
+    submissions fewer than the lands the runner carried; when the runner answered the newest land refused: waiting, in
+    the runner's words, with the places, while Flume's status names a place on the bolt's branch, as Flume refuses a
+    base place's retry while one is live (flume 203), nothing of the bolt's; none, once it names none, where that
+    land waited, so it bars no land (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decisions 3 and 4); else
+    stopped, in the runner's words; submitted, with the merge queue's entry and its state, while
     it waits or is under test; refused, the bolt's, for a failed check, with Flume's words; refused, a conflict, with
     the files and main's revision where the merge queue records one; stopped, in Flume's words, for a submission
     withdrawn or refused; unknown, naming why, where crew can't read the runner, the place's status, or the submission
@@ -1534,7 +1544,12 @@ def landing_outcome(launch, lands, reads):
     if la is None:
         return asked
     if la.get("Outcome") == "refused":
-        return dict(asked, outcome="stopped", by="runner", words=la.get("Words") or "the runner refused the land")
+        words = la.get("Words") or "the runner refused the land"
+        if f and f["on_branch"]:
+            return dict(asked, outcome="waiting", by="runner", words=words, places=list(f["on_branch"]))
+        if str(asked["request"]) in {str(x) for x in waited}:
+            return {"outcome": "none"}
+        return dict(asked, outcome="stopped", by="runner", words=words)
     carried = sum(1 for l in lands if (reading["answers"].get(number(l.get("Request"))) or {}).get("Outcome") not in (None, "refused"))
     if f is None or (f["submits"] is not None and f["submits"] < carried):
         return asked

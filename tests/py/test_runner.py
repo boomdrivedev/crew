@@ -1488,6 +1488,36 @@ class TestLandingOf:
         got = self.of(ran({1: "flume-0.17.0/bolt-submitted"}, refused={2: "flume refused it: a place on bolt/b is live"}))
         assert got == {"outcome": "stopped", "request": 2, "by": "runner", "words": "flume refused it: a place on bolt/b is live"}
 
+    WAIT = ("the base place /Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y is submitted once no place on its "
+            "branch bolt/y is live, and /Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1 is (203)")
+
+    def test_a_land_refused_while_flume_names_a_place_on_the_branch_waits_on_it(self):
+        """bolt-teams "A land refused while a place on the branch is live" (a-land-waits-while-a-place-on-its-bolts-
+        branch-is-live, Decision 3): Flume's status of the base place names fix--y-1 on its branch, so the land the runner
+        answered refused waits on it, in the runner's words, and is no stop."""
+        got = self.of(ran({1: "flume-0.19.0/bolt-forecast-fixing"}, refused={2: self.WAIT}))
+        assert {k: got[k] for k in ("outcome", "request", "by", "words", "places")} == {
+            "outcome": "waiting", "request": 2, "by": "runner", "words": self.WAIT, "places": [Y_FIX]}
+        assert got["fix"]["live"]["name"] == "y-1"
+
+    def test_a_land_that_waited_reads_none_once_flume_names_no_place(self):
+        """bolt-teams "A land that waited, nothing on the branch now" (Decision 4): land 2 is recorded waiting, and Flume
+        now names no place on bolt/y, y-1 having landed, so no land stands."""
+        rs = self.requests()
+        got = runner.landing_of(rs[0], runner.lands_of(rs, rs[0]), ran({1: "flume-0.19.0/bolt-forecast-fixed"}, refused={2: self.WAIT}),
+                                waited={"2"})
+        assert got["outcome"] == "none" and "places" not in got and "request" not in got
+        assert runner.landing_outcome(rs[0], runner.lands_of(rs, rs[0]), ran({1: "flume-0.19.0/bolt-forecast-fixed"}, refused={2: self.WAIT}),
+                                      waited={2}) == {"outcome": "none"}
+
+    def test_a_land_refused_with_no_place_named_is_stopped(self):
+        """bolt-teams "A land the runner refused": Flume names no place on bolt/y and the record holds no wait of land 2,
+        so the refusal is a stop, in the runner's words."""
+        got = self.of(ran({1: "flume-0.19.0/bolt-forecast-fixed"}, refused={2: "flume refused it: no such place"}))
+        assert {k: got[k] for k in ("outcome", "request", "by", "words")} == {
+            "outcome": "stopped", "request": 2, "by": "runner", "words": "flume refused it: no such place"}
+        assert "places" not in got
+
     def test_a_submission_under_test_is_submitted_with_its_entry(self):
         got = self.of(ran({1: "flume-0.17.0/bolt-submitted"}, unplaced={2: "-"}))
         assert got == {"outcome": "submitted", "request": 2, "entry": "412", "state": "under_test"}
