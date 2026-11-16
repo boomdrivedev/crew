@@ -1694,7 +1694,9 @@ class Stages:
         for a bolt started before bolts were base places (runner.legacy_said); unknown where the drive's runners
         can't be read; None for a bolt not started. Any outcome but landed is read against its kit's main, and reads
         {outcome: landed, commit} at main's commit that landed it once main holds its work (main_landing), the keys a
-        landed report gives (a-landed-bolt-is-closed-and-offered-no-more, Decision 3)."""
+        landed report gives (a-landed-bolt-is-closed-and-offered-no-more, Decision 3). A land the run record holds
+        recorded waiting reads none once Flume names no place on its branch (landing_waited), and unknown where the
+        run record can't be read to tell (read.1)."""
         if not started(bolt):
             return None
         run = self.runner(self.label)
@@ -1705,7 +1707,10 @@ class Stages:
         if launch is None:
             l = {"outcome": "legacy", "words": runner.legacy_said(bolt.name())}
         else:
-            l = runner.landing_of(launch, runner.lands_of(requests, launch), reads)
+            try:
+                l = landing_waited(launch, requests, reads, self.entries)
+            except Refusal as e:
+                l = {"outcome": "unknown", "why": f"crew can't tell whether bolt {bolt.name()}'s land waited on its branch: {e}"}
         if l.get("outcome") == "landed":
             return l
         m, _ = self.main_landing(bolt)  # read against its kit's main where the report does not read it landed (Decision 3)
@@ -4522,9 +4527,9 @@ def started_land(fleet, label, plan, b, units, by, close_why, card):
     bolt = b.name()
     requests, reads = runner_facts(fleet, label)
     launch = runner.launch_of(requests, f"bolt/{bolt}")
-    l = runner.landing_of(launch, runner.lands_of(requests, launch), reads) if launch is not None else None
-    kit_name = (b.get("Repo") or (launch or {}).get("Repo") or "").split("/")[-1]
     entries = drive_entries(fleet, label)
+    l = landing_waited(launch, requests, reads, entries) if launch is not None else None
+    kit_name = (b.get("Repo") or (launch or {}).get("Repo") or "").split("/")[-1]
     if l is None or l["outcome"] != "landed":
         # its work on its kit's main, whatever the report says, closes it at main's commit (Decision 5)
         st = Stages(fleet, plan, {}, runs={label: (requests, reads)}, label=label)
@@ -4907,7 +4912,8 @@ def phase_at(w, bolt):
         try:
             requests = requests_of(w).recs("Request")
             launch = runner.launch_of(requests, f"bolt/{bolt}")
-            l = runner.landing_of(launch, runner.lands_of(requests, launch), w.runners()) if launch is not None else {}
+            l = runner.landing_of(launch, runner.lands_of(requests, launch), w.runners(), lands_waited(w.entries())) \
+                if launch is not None else {}
         except Refusal:
             l = {}
         if l.get("entry"):
@@ -5003,7 +5009,11 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     it reads landed, what is said of it), said too."""
     requests, reads = run or runner_facts(fleet, label)
     launch = runner.launch_of(requests, f"bolt/{bolt}")
-    l = runner.landing_of(launch, runner.lands_of(requests, launch), reads) if launch is not None else None
+    def record_now():  # the run record, read once where a wait must be told from a stop (landing_waited)
+        nonlocal entries
+        entries = drive_entries(fleet, label) if entries is None else entries
+        return entries
+    l = landing_waited(launch, requests, reads, record_now) if launch is not None else None
     if l is None or l["outcome"] != "landed":
         # its work on its kit's main, whatever the report says: recorded and closed, ops asked nothing (Decision 5)
         m = landing_on_main(fleet, label, bolt, (requests, reads), entries)
@@ -5039,6 +5049,21 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     if recorded and card:  # its kit's card raised on what was recorded, which closes an answered card at a stop (unheld_raise)
         unheld_raise(fleet, label, bolt, launch)
     return False, said
+
+
+def landing_waited(launch, requests, reads, entries):
+    """A started bolt's landing as runner.landing_of reads it given the lands the run record holds recorded waiting
+    (lands_waited), so a land that waited on the places Flume named on its bolt's branch reads none once Flume names
+    none, and is no stop (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 4): launch, its base place's
+    launch; requests, requests.rec's records; reads, the drive's runners; entries, the run record's entries, or a
+    function that reads them, read only where the newest land the runner refused reads stopped, the one outcome a wait
+    changes, so a read that finds none reads no record (plan.12); a read of it refused raises. A decision of facts
+    alone but for the read it is handed (code.7)."""
+    lands = runner.lands_of(requests, launch)
+    l = runner.landing_of(launch, lands, reads)
+    if l.get("outcome") != "stopped" or l.get("by") != "runner":
+        return l
+    return runner.landing_of(launch, lands, reads, lands_waited(entries() if callable(entries) else entries))
 
 
 def unheld_raise(fleet, label, bolt, launch):
@@ -8626,7 +8651,7 @@ def stopped(label, act, on, said):
 def landings_judged(fleet, label, plan, sv, runs):
     """The landings each host's card sweep reads (reap_judged), from the rail's read and reading nothing (code.7):
     {host: [{bolt, kit, dir, stages}]}, each started bolt of the drive whose landing the runner's report has decided,
-    landed, refused or stopped (Stages.landing), under the host its work runs on as the read holds it (known_at), with
+    landed, refused or stopped, or that waits on the places on its branch (Stages.landing), under the host its work runs on as the read holds it (known_at), with
     its kit's folder there and the stage of each unit and chore the plan holds in it (Stages), so a sweep reads no plan
     or kit of its own (plan.12), and one with no landing decided reads nothing for it; none where the read holds no
     runners of the drive. A bolt read landed on its kit's main (Stages.landed_on_main; a-landed-bolt-is-closed-and-offered-
@@ -8637,7 +8662,7 @@ def landings_judged(fleet, label, plan, sv, runs):
     st, out = Stages(fleet, plan, sv, runs, label), {}
     of = st.of
     for b in plan.bolts():
-        decided = started(b) and (st.landing(b) or {}).get("outcome") in ("landed", "refused", "stopped")
+        decided = started(b) and (st.landing(b) or {}).get("outcome") in ("landed", "refused", "stopped", "waiting")
         main = decided and st.landed_on_main(b)
         t = known_at(fleet, label, b, runs[label]) if decided else None
         if t or main:

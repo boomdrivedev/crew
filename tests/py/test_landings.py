@@ -3123,6 +3123,68 @@ def test_a_stop_on_the_send_closes_the_card_and_asks_again_though_the_head_moved
         ("card.close", said, None), ("card.post", None, "z@abc1234")]
 
 
+WAIT = ("flume refused the retry: the base place /Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y is submitted "
+        "once no place on its branch bolt/y is live, and /Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1 is (203)")
+FIXED = "5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b"  # the head flume-0.19.0/bolt-forecast-fixed names, where y-1 landed
+
+
+def test_a_land_that_waited_on_a_landing_fix_lands_on_the_same_send_once_it_took_main_in(monkeypatch, capsys):
+    """bolt-teams "The landing fix took main in" and rail-cards "The send carried" (a-land-waits-while-a-place-on-its-
+    bolts-branch-is-live, Decision 4): z, marked to stay, was ticked on req_k1's send at abc1234, and the land that send
+    posted (request 5) was refused while Flume's landing fix y-1 was live on its branch, so the run record holds it
+    waiting. While Flume names y-1, the raise posts nothing, leaves req_k1 and posts no card asking for z; once y-1 has
+    taken main in and landed, z proven at 5a6b7c8 with its own work unchanged, the raise posts one land of z at 5a6b7c8
+    on that same send, still leaving req_k1, and no card asks for z again."""
+    from test_runner import rec
+    waited = [dict(Act="bolt.submit", On=["bolt/z"], Card="req_k1", Head=H1, Request="5", Outcome="asked"),
+              dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="waiting", Why=WAIT)]
+    card = [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads="z@abc1234")]
+    answer = {"status": "answered", "turn": "agent", "version": 3, "answer": {"approved": True}}
+
+    def raise_(fixture, head, works=None):
+        acts = proof_acts(monkeypatch, {"z": row("z", head)}, waited + card, answers=dict(POSTED, get_request=(answer, None)),
+                          drive=waited, lands=[rec(5, "land", "bolt/z", Of=2)], works=works,
+                          reads=TestLandsDue().reads(launched={2: f"flume-0.19.0/{fixture}"}, refused={5: WAIT}))
+        return acts, plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    acts, got = raise_("bolt-forecast-fixing", H1)
+    assert got == "req_k1" and getattr(acts, "posts", []) == []
+    assert [e["Act"] for e in acts.emitted if e["Act"] != "card.answer"] == []
+    assert not any(t in ("post_request", "close_request", "update_request") for t, _ in acts.calls)
+    out = capsys.readouterr().out
+    assert "req_k1 is left as it is, the user having answered it" in out and "spent" not in out
+    acts, got = raise_("bolt-forecast-fixed", FIXED, works={"z": work(head=FIXED)})
+    assert [(s, on, f.get("Card"), f.get("Form"), f["Head"], f["Request"]) for s, _, on, f, _ in acts.posts] == [
+        ("plan(crew): land z on the user's send", ["bolt/z"], "req_k1", None, FIXED, "6")]
+    assert got == "req_k1" and [e["Act"] for e in acts.emitted if e["Act"] != "card.answer"] == []
+    out = capsys.readouterr().out
+    assert "z is asked of the runner to land at 5a6b7c8 (request 6), on the user's send" in out
+    # the next raise reads z's land asked on req_k1's send: nothing more is posted
+    acts.rows = {"z": row("z", FIXED)}
+    assert plan.raise_landings(FLEET, "swancloud", "crew", acts) == "req_k1" and len(acts.posts) == 1
+
+
+def test_a_land_on_proof_that_waited_is_posted_again_on_proof(monkeypatch, capsys):
+    """bolt-teams "A land on proof that waited" (Decision 4): crew's land on proof of y, not marked to stay, at abc1234
+    (request 5) was refused while Flume named y-1 on bolt/y, and the run record holds it waiting. While Flume names y-1,
+    no land on proof is posted; once y-1 has landed and y reads proven at 5a6b7c8, the raise posts one land of y on
+    proof there."""
+    from test_runner import rec
+    waited = [dict(Act="bolt.submit", On=["bolt/y"], Form="proof", Head=H1, Request="5", Outcome="asked"),
+              dict(Act="bolt.submit", On=["bolt/y"], Head=H1, Request="5", Outcome="waiting", Why=WAIT)]
+
+    def raise_(fixture, head):
+        acts = proof_acts(monkeypatch, {"y": row("y", head)}, waited, drive=waited, lands=[rec(5, "land", "bolt/y", Of=1)],
+                          reads=TestLandsDue().reads(launched={1: f"flume-0.19.0/{fixture}"}, refused={5: WAIT}))
+        plan.raise_landings(FLEET, "swancloud", "crew", acts)
+        return acts
+    assert getattr(raise_("bolt-forecast-fixing", H1), "posts", []) == []
+    assert "on proof" not in capsys.readouterr().out
+    acts = raise_("bolt-forecast-fixed", FIXED)
+    assert [(s, on, f.get("Card"), f.get("Form"), f["Head"], f["Request"]) for s, _, on, f, _ in acts.posts] == [
+        ("plan(crew): land y on proof", ["bolt/y"], None, "proof", FIXED, "6")]
+    assert "y is asked of the runner to land at 5a6b7c8 (request 6), on proof" in capsys.readouterr().out
+
+
 def test_a_bolt_whose_forecast_could_not_be_made_lands_on_no_proof(monkeypatch, capsys):
     """rail-cards "A proven bolt not marked to stay lands on proof" (Decision 1 of a-proven-bolt-lands-on-proof; read.1):
     y reads clear of main only once a forecast found no conflict, so where git could not tell, no land on proof is
