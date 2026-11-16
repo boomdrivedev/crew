@@ -4994,7 +4994,9 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
     bolt, once however often it is read (take_main_launch). Where the bolt's base place names a landing fix (runner.landing_way;
     crews-bolt-kind-names-its-landing-fix, Decision 4), a refusal whose way on is Flume's, its landing fix live, landed
     or due, launches nothing and asks nothing, and one whose way on is its caller's, past the bound or its fix dropped
-    or not launched, asks ops in Flume's words (runner.caller_said) and launches nothing. Each record is decided at the tip its write is applied to, so two reads at once record once.
+    or not launched, asks ops in Flume's words (runner.caller_said) and launches nothing. A land that waits on the
+    places Flume names on the bolt's branch is recorded waiting, once, and asks ops nothing and raises no card, its
+    send standing (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3). Each record is decided at the tip its write is applied to, so two reads at once record once.
     Nothing is recorded for a landing undecided or one crew can't tell (read.1). Where the report does not read it landed,
     one with no launch of its own among them, and its kit's main holds its work (landing_on_main; a-landed-bolt-is-
     closed-and-offered-no-more, Decision 5), it is recorded landed and closed the same way, ops asked nothing. (whether
@@ -5026,7 +5028,9 @@ def landing_read(fleet, label, bolt, run=None, entries=None, card=True):
             landing_close(fleet, label, bolt, l, entries, card)
         return True, said
     by = (l.get("fix") or {}).get("by", "crew")  # whose a refusal's way on is (runner.landing_way)
-    recorded = l["outcome"] in ("refused", "stopped") and landing_record(fleet, label, bolt, l, said, ops)
+    recorded = l["outcome"] in ("refused", "stopped", "waiting") and landing_record(fleet, label, bolt, l, said, ops)
+    if l["outcome"] == "waiting":  # nothing for ops to do and no card to close: the send stands
+        return False, said
     if recorded and (l["outcome"] == "stopped" or by in ("crew", "caller")):
         unlanded_ask(fleet, label, bolt, kit_name, landing_request(entries, bolt, l),
                      runner.caller_said(l, bolt) if l["outcome"] == "refused" and by == "caller" else said)

@@ -718,6 +718,21 @@ class TestTheFirstReadActs:
         (e,) = self.emitted
         assert (e["Outcome"], e["why"]) == ("stopped", "flume refused it: a place on bolt/y is live")
 
+    def test_a_wait_recorded_asks_ops_nothing_and_raises_no_card(self):
+        """role-runs "A land that waits" and bolt-teams "Flume's landing fix launched after the land was posted" (a-land-
+        waits-while-a-place-on-its-bolts-branch-is-live, Decision 3): the runner answered y's land 2 refused while
+        Flume names fix--y-1 on bolt/y; the read records it waiting in those words, asks ops nothing, launches nothing
+        and raises no card, and a second read records nothing."""
+        wait = TestTheLandingsRecord.WAIT
+        assert self.read("flume-0.19.0/bolt-forecast-fixing", more={}, refused={2: wait})[0] is False
+        (e,) = self.emitted
+        assert (e["Act"], e["Outcome"], e["Request"], e["Head"], e["why"], e.get("refused"), e.get("Submission")) == (
+            "bolt.submit", "waiting", "2", TIP, wait, None, None)
+        assert self.asked == [] and self.raised == [] and self.taken == [] and self.closed == []
+        self.read("flume-0.19.0/bolt-forecast-fixing", entries=(ASKED, dict(ASKED, Outcome="waiting", Why=wait)), more={},
+                  refused={2: wait})
+        assert len(self.emitted) == 1 and self.asked == [] and self.raised == []
+
     def test_a_launch_refused_for_a_kind_its_host_has_not_locked_reads_unlaunched_and_appends_nothing(self):
         """bolt-teams "A kind its host has not locked": the runner answered y's launch refused in Flume's words naming
         the lock; a read of y says so, records nothing and appends no request, so nothing launches it again."""
