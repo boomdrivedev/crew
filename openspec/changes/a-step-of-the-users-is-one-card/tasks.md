@@ -5,6 +5,7 @@ Work the tasks in order, from the place's root. Before the first logic check, sy
 ## 1. The specs reconcile
 
 - [x] 1.1 The change `an-offer-card-shows-the-step-the-deploy-waits-on-first` is removed, its standing requirements carried by this change's `main-level` delta (design, Decision 10; Task notes 1.1). Passes `test ! -e openspec/changes/an-offer-card-shows-the-step-the-deploy-waits-on-first && devenv shell -- openspec validate a-step-of-the-users-is-one-card --strict`, valid with no line saying archive would refuse it.
+- [x] 1.2 The change takes in its bolt's base at `ef7bc49f`, where `a-bolt-keeps-its-priority-until-it-is-moved` added rail-cards' "No land is posted for work that has landed or been dropped" where this change's archive added its own requirements, which sluice's #138 found contested. The change stands out of the archive, `openspec/specs/` is the base's, and the change's delta applies to it beside that requirement, the rail's cases passing on the merged code. Passes `test ! -e openspec/changes/archive/2026-11-17-a-step-of-the-users-is-one-card && git diff --quiet ef7bc49f -- openspec/specs && devenv shell -- openspec validate a-step-of-the-users-is-one-card --strict && devenv shell -- openspec validate --specs --strict && devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_rail.py`.
 
 ## 2. One step, one card, however many hosts
 
