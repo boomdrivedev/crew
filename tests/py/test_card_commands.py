@@ -532,6 +532,32 @@ def test_a_post_pending_you_answers_with_the_card_the_record_already_holds_open_
                                        "call get_request (requestId req_c1, name wldn-ops)\n")
 
 
+class TestAStepCardsHeads:
+    """rail-cards "One step for four hosts before the Willdan cutover": a shared step card's post and each change record
+    the steps it names, so crew ops settle settles what the user was shown (record 0070, Decision 3)."""
+    TO, CHA = "a" * 40, "b" * 40
+    HEADS = f"mac-studio@{TO} macbook-pro@{TO} deneb@{TO} chuck-herdr-alpha@{CHA}"
+    FACTS = dict(env="mac-studio", n=7, key="op/mac-studio/7", text="Move the Archives disk from mac-studio to deneb.", doer="user",
+                 held=False, why=None, where=None, commands=[], done=None, gate=None, to=TO, before=True, deployed=True,
+                 hosts=["mac-studio", "macbook-pro", "deneb", "chuck-herdr-alpha"], heads=HEADS.split())
+
+    def test_a_shared_step_cards_post_records_the_heads_of_each_step_it_names(self):
+        acts = Acts({"match_area": (MATCHED, None), "post_request": (dict(POSTED, requestId="req_7"), None)}, caller="afterthought-ops")
+        assert plan.row_card_post(None, "afterthought", "afterthought-ops", cards.step_card, self.FACTS, WHERE, acts) == "req_7"
+        posted, = acts.emitted
+        assert (posted["Act"], posted["Key"], posted["On"], posted["Heads"]) == ("card.post", "op/mac-studio/7", ["env/mac-studio"], self.HEADS)
+
+    def test_a_change_of_it_records_the_heads_it_names_now(self):
+        acts = Acts({"get_request": ({"status": "pending", "version": 3}, None), "update_request": ({"version": 4}, None)},
+                    entries=[post("op/mac-studio/7", "afterthought-ops", "req_7", Heads=self.HEADS)], caller="afterthought-ops")
+        now = self.HEADS.replace(f"deneb@{self.TO} ", "")
+        facts = dict(self.FACTS, hosts=["mac-studio", "macbook-pro", "chuck-herdr-alpha"], heads=now.split())
+        assert plan.row_card_change(None, "afterthought", "afterthought-ops", cards.step_card, facts, "deneb's is recorded done", WHERE,
+                                    acts) == "req_7"
+        assert [(e["Act"], e.get("Heads")) for e in acts.emitted] == [("card.update", now)]
+        assert plan.built_fields({"heads": ["deneb"]}) == {"Heads": "deneb"}
+
+
 # A step's card following its deploy's card, which swancloud-ops's run record still holds open (rail-cards: a post
 # that follows an open card reads it).
 DEPLOY_HELD = [post("deploy/srv", "swancloud-ops", "req_d1")]

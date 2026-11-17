@@ -6,6 +6,7 @@ step's card is raised, one at a time. That each act is an entry of the run recor
 host, that crew ops word and steps read them back, that quiet reads the host's agents and test slots, that each card
 is posted, changed and closed, and that a command run elsewhere runs there are the ops journey's (t-journey-ops)."""
 import io
+import re
 
 import pytest
 
@@ -654,10 +655,44 @@ class TestStepCard:
         assert (f["text"], f["doer"], f["held"], f["where"]) == ("rotate the kanidm admin password in its vault", "user", False, "a terminal on mac-studio")
         assert f["commands"] == ["clan vars generate swancloud-srv --generator kanidm-admin --regenerate", "clan machines update swancloud-srv"]
         c = cards.step_card(f)["card"]
-        assert (c["kind"], c["intent"], c["summary"]) == ("action", "do", "Only you hold the vault, and no check can tell it was done.")
+        assert (c["kind"], c["intent"], c["summary"]) == (
+            "action", "do", "Only you hold the vault, and no check can tell it was done. It waits on you on srv.")
+        assert c["title"] == "rotate the kanidm admin password in its vault, on srv"
         assert c["action"]["steps"][0]["command"] == "clan vars generate swancloud-srv --generator kanidm-admin --regenerate"
         assert c["action"]["done"] == "kanidm's login page takes the new password."
         assert ops.step_words(" ".join(ROTATE.split())) == ops.step_words(ROTATE)
+
+    def test_the_cutovers_card_is_a_plain_sentence_of_the_step_and_the_hosts_it_releases(self):
+        """rail-cards "The Archives disk's card": its words and the four hosts, its why, and no id of crew's."""
+        g, = ops.groups(CUTOVER)
+        f = ops.step_facts("mac-studio", 7, g["steps"][0][2], "afterthought", group=g["steps"])
+        out = cards.step_card(dict(f, key="op/mac-studio/7"))
+        c = out["card"]
+        assert out["key"] == "op/mac-studio/7" and out["heads"] == CUTOVER_HEADS.split()
+        assert c["title"] == f"Move the Archives disk from mac-studio to deneb, so mac-studio, macbook-pro, deneb and {CHA} can deploy"
+        said = f"It releases the deploys of mac-studio, macbook-pro, deneb and {CHA}; one answer settles it on each."
+        assert c["summary"] == f"{DISK_WHY} {said}"
+        assert not re.search(r"record \d|[a-z]+\.\d+", said + c["title"]) and "artifacts" not in c
+
+    def test_a_step_after_one_hosts_deploy_reads_after_its_deploy(self):
+        f = ops.step_facts("srv", 1, e("ops.step", env="srv", Head="c882cff" + "0" * 33, Key="rotate", State="waiting", Doer="user",
+                                       Text="Rotate the kanidm admin password."), "swancloud")
+        out = cards.step_card(f)
+        assert out["card"]["title"] == "Rotate the kanidm admin password, after srv's deploy"
+        assert out["heads"] == ["srv@c882cff" + "0" * 33] and out["card"]["summary"].endswith("It waits on you on srv.")
+
+    def test_nine_hosts_past_half_a_title_are_counted_and_named_in_the_summary(self):
+        """rail-cards "More hosts than the title holds"."""
+        hosts = [f"swancloud-host-{i}" for i in range(1, 10)]
+        steps = [disk(x, i, When="before") for i, x in enumerate(hosts)]
+        g, = ops.groups(steps)
+        c = cards.step_card(ops.step_facts(hosts[0], 1, steps[0], "swancloud", group=g["steps"]))["card"]
+        assert c["title"] == "Move the Archives disk from mac-studio to deneb, so 9 hosts can deploy"
+        assert all(x in c["summary"] for x in hosts) and len(c["title"]) <= cards.TITLE
+        long = [disk(x, i, When="before", Text="Move every disk " + "and every shelf " * 8 + "to deneb.") for i, x in enumerate(hosts)]
+        g, = ops.groups(long)
+        c = cards.step_card(ops.step_facts(hosts[0], 1, long[0], "swancloud", group=g["steps"]))["card"]
+        assert c["title"].endswith("…, so 9 hosts can deploy") and len(c["title"]) <= cards.TITLE
 
     def test_a_held_steps_card_is_a_choice_of_when_saying_what_now_cuts(self):
         step = e("ops.step", Key="restart-teams/1", State="waiting", Doer="main-ops", When="quiet held", Text="restart crew's teams\n- why: It ends a stage.")
