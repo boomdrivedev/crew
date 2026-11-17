@@ -1090,16 +1090,17 @@ def built_order(work):
     return order
 
 
-def bolt_launch(plan, bolt, label):
+def bolt_launch(plan, bolt, label, priority):
     """The launch of a started bolt's base place (crew-lands-each-bolt-through-flumes-base-place, Decision 3), as (act,
     work, its fields as plan.request takes them): a place of crew's kind crew/bolt named the bolt, cut from main, in
     the bolt's repository as the plan names it, for a runner whose configuration names it to take in the stream its
-    host maps it to, at the bolt's priority (priority_of), its intent the bolt's, main-level ops as its recipient,
-    since what follows a landing is ops's (plan.16), and no Brief, since a base place runs no agent, and no After, since
-    it lands after every place on its branch. A start appends it before its pieces' launches (reach)."""
+    host maps it to, at priority, the bolt's as a start numbers it (numbering) or its requests set it (priority_of), its
+    intent the bolt's, main-level ops as its recipient, since what follows a landing is ops's (plan.16), and no Brief,
+    since a base place runs no agent, and no After, since it lands after every place on its branch. A start appends it
+    before its pieces' launches (reach), which read the bolt's priority from it."""
     return ("launch", f"bolt/{bolt}", {
         "Repo": plan.bolt(bolt).get("Repo"), "Kind": BOLT_KIND, "Name": bolt, "Base": "main",
-        "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/ops"})
+        "Priority": priority, "Intent": f"{label}/{bolt}", "Recipient": f"{label}/ops"})
 
 
 def restart(plan, requests, reads, bolt, label):
@@ -1108,8 +1109,8 @@ def restart(plan, requests, reads, bolt, label):
     start run again launches a bolt whose launch the runner refused"), from facts: plan, as the write leaves it;
     requests, requests.rec's records before it; reads, the drive's runners as crew read them (host_read's, by
     host). Returns (the requests to append, each (act, work, its fields), None): a drop of each of its pieces' launches
-    standing that the runner has not answered launched, then a launch anew of its base place (bolt_launch), its pieces
-    following by reach; or (None, why) for any other started bolt: one with no launch of its own, started before bolts
+    standing that the runner has not answered launched, then a launch anew of its base place (bolt_launch) at the
+    priority the bolt's requests already set (priority_of), its pieces following by reach; or (None, why) for any other started bolt: one with no launch of its own, started before bolts
     were base places (Decision 9), one whose launch is unanswered, held or launched, and one whose launch, or a piece's,
     crew can't tell the runner's answer to (read.1)."""
     started = f"bolt {bolt} is started already"
@@ -1133,7 +1134,7 @@ def restart(plan, requests, reads, bolt, label):
             return None, f"{started}, and crew can't tell whether {l.get('Work')}'s launch was launched: {why}"
         if r is None or (r["answers"].get(m) or {}).get("Outcome") != "launched":
             drops.append(("drop", l.get("Work"), {"Of": l.get("Request")}))
-    return drops + [bolt_launch(plan, bolt, label)], None
+    return drops + [bolt_launch(plan, bolt, label, priority_of(requests, bolt))], None
 
 
 def reach(plan, requests, bolt, label, again=()):

@@ -2581,8 +2581,9 @@ def reach_places(fleet, w, bolt, again=()):
     """A plan write's own act on a started bolt (Decisions 5 to 7 of teams-cross-to-flume-as-their-bolts-land): the
     requests runner.reach decides, its launches, drops and launches anew, each in the bolt's repository for the runner
     whose configuration names it to take (the user's ruling of 2026-11-01), appended in the write's own commit
-    (request), then the priorities the plan's order changed (reprioritise); again the work launched anew. Returns each
-    launch appended, as (its number, its work)."""
+    (request), each launch at the bolt's priority as its requests set it (runner.priority_of); again the work launched
+    anew. It re-sets no priority, so a drop, a close or work added re-sets none of any bolt's
+    (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3). Returns each launch appended, as (its number, its work)."""
     b = w.plan.bolt(bolt)
     b is None or started(b) or fail(f"bolt {bolt} is not started, so nothing of its work is launched")
     launched = []
@@ -2590,17 +2591,16 @@ def reach_places(fleet, w, bolt, again=()):
         n = request(w, act, work, **given)
         if act == "launch":
             launched.append((n, work))
-    reprioritise(w)
     return launched
 
 
-def reprioritise(w):
-    """Decision 6: a priority request appended for each launch standing on a bolt given through Flume whose priority
-    the plan's order changed (runner.priorities), in the write's own commit; nothing when the branch holds no
-    requests."""
+def reprioritise(w, numbers):
+    """A priority request appended for each place whose priority a start or a move changed (runner.priorities over
+    numbers, runner.numbering's, and the drive's runners as the write reads them), in the write's own commit
+    (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3); nothing when the branch holds no requests."""
     if w.text("requests.rec") is None:
         return
-    for launch, p in runner.priorities(w.plan, requests_of(w).recs("Request")):
+    for launch, p in runner.priorities(requests_of(w).recs("Request"), w.runners(), numbers):
         request(w, "priority", launch.get("Work"), Of=launch.get("Request"), Priority=p)
 
 
@@ -5650,8 +5650,10 @@ def op_bolt_new(ctx, a):
 def op_bolt_start(ctx, a):
     """crew bolt start <bolt>: the bolt's work started through Flume with no team (Decision 14 of
     the-team-machinery-leaves; crew-lands-each-bolt-through-flumes-base-place, Decision 3): in one plan write, the bolt
-    marked Path: flume, the launch of its base place, of crew's kind crew/bolt on main (runner.bolt_launch), and then a
-    launch of each of its units and chores on bolt/<bolt> (reach_places), each in its repository for the runner whose
+    marked Path: flume, its number among the started bolts (runner.numbering; a-bolt-keeps-its-priority-until-it-is-moved,
+    Decision 3), with a priority for each place of another bolt only where the bolts are numbered afresh (reprioritise),
+    the launch of its base place at that number, of crew's kind crew/bolt on main (runner.bolt_launch), and then a
+    launch of each of its units and chores on bolt/<bolt> at the same (reach_places), each in its repository for the runner whose
     configuration names it to take, starting no agent, making no branch and reading no host (record 0056 point 2). A
     proposal may hold it, and the user runs it directly (roles.1, may_write). Refused, with the plan unchanged and
     nothing requested, while no runner answers for the drive (runner.runnerless), and for a bolt started already,
@@ -5671,7 +5673,10 @@ def op_bolt_start(ctx, a):
             not why or fail(why)
         else:
             s.set("Path", "flume")
-            asked = [runner.bolt_launch(w.plan, a.bolt, w.label)]
+            have = requests_of(w).recs("Request")
+            numbers = runner.numbering(w.plan, have, a.bolt)
+            reprioritise(w, numbers)
+            asked = [runner.bolt_launch(w.plan, a.bolt, w.label, numbers.get(a.bolt, runner.priority_of(have, a.bolt)))]
         if getattr(a, "stays", False):
             s.set("Stays", "yes")
         for act, work, given in asked:
@@ -5802,7 +5807,7 @@ def op_bolt_order(ctx, a):
             o = w.bolt(a.before)
             o is not b or fail("a bolt can't go before itself")
             w.plan.insert(b, before=o)
-        reprioritise(w)
+        reprioritise(w, runner.numbering(w.plan, requests_of(w).recs("Request"), a.bolt))
         return [a.bolt]
     where = "first" if a.first else "last" if a.last else f"before {a.before}"
     return Op(label, change, f"plan({a.bolt}): order the bolt {where}", "bolt.order", on=[f"bolt/{a.bolt}"])
