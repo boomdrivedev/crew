@@ -2835,3 +2835,52 @@ class TestABoltOnMainHasNoLandLine:
         assert self.land_lines(monkeypatch, held=()) == [
             f"apex-zones, on {BOX}, in Flume stream wldn: apex-zones was started before bolts were base places and lands under "
             "the crew that started it"]
+
+
+class TestStepCardsFold:
+    """rail-cards "The rail's read changes a step's card that does not name its environments as they stand" (record
+    0070, Decision 7): the cards from before record 0070, one for each host's record of one step, become one, and a
+    card whose row gained a host is changed in place, at the rail's read on the main level's host."""
+
+    def es(self):
+        from test_ops import disk, done_before
+        return (done_before("mac-studio", 6) + done_before("macbook-pro", 7) + done_before("deneb", 41)
+                + [disk("mac-studio", 2), disk("macbook-pro", 3), disk("deneb", 4)])
+
+    def posts(self, *keyed):
+        return [dict(Act="card.post", Key=k, Card=c, By="wldn-ops", At=iso(20), **f) for k, c, f in keyed]
+
+    def rows(self, es, posts):
+        import ops
+        return [dict(r, at=NOW) for r in ops.rows(None, "wldn", es, posts)]
+
+    def test_three_cards_from_before_become_one_the_first_hosts_changed_and_the_others_closed_naming_it(self):
+        es, posts = self.es(), self.posts(("op/mac-studio/7", "req_7", {}), ("op/macbook-pro/8", "req_8", {}), ("op/deneb/42", "req_42", {}))
+        rows_ = self.rows(es, posts)
+        assert [r["key"] for r in rows_] == ["op/mac-studio/7"]
+        c7, c8, c42 = (card(k, c, "wldn-ops") for k, c, _ in [("op/mac-studio/7", "req_7", 0), ("op/macbook-pro/8", "req_8", 0), ("op/deneb/42", "req_42", 0)])
+        j = plan.sweep_judged("mac-studio", rows_, [c7, c8, c42], es + posts, {"op/mac-studio/7": ("wldn-ops", "mac-studio")}, set(), set(), NOW)
+        assert j["moved"] == [(c7, rows_[0], "macbook-pro waits on it too; deneb waits on it too")]
+        assert j["gone"] == [(c8, None, "Asked on op/mac-studio/7 with mac-studio and deneb"),
+                             (c42, None, "Asked on op/mac-studio/7 with mac-studio and macbook-pro")]
+        raised = []
+        out, acts = swept(rows_, [c7, c8, c42], es + posts,
+                          raises={"op": lambda fleet, row, acts=None, note="Raised again": raised.append((row["key"], note)) or "req_7"})
+        assert raised == [("op/mac-studio/7", "macbook-pro waits on it too; deneb waits on it too")]
+        assert [(d["key"], d["did"], d["words"]) for d in out["done"]] == [
+            ("op/macbook-pro/8", "withdrawn", "Asked on op/mac-studio/7 with mac-studio and deneb"),
+            ("op/deneb/42", "withdrawn", "Asked on op/mac-studio/7 with mac-studio and macbook-pro"),
+            ("op/mac-studio/7", "changed", "macbook-pro waits on it too; deneb waits on it too")]
+
+    def test_a_card_whose_row_gained_a_host_is_changed_in_place_and_one_the_user_answered_is_left(self):
+        from test_ops import S1
+        es = self.es()
+        posts = self.posts(("op/mac-studio/7", "req_7", {"Heads": f"mac-studio@{S1} macbook-pro@{S1}"}))
+        rows_ = self.rows(es, posts)
+        c7 = card("op/mac-studio/7", "req_7", "wldn-ops")
+        owners = {"op/mac-studio/7": ("wldn-ops", "mac-studio")}
+        assert plan.sweep_judged("mac-studio", rows_, [c7], es + posts, owners, set(), set(), NOW)["moved"] == [(c7, rows_[0], "deneb waits on it too")]
+        answered = posts + [dict(Act="card.answer", Card="req_7", By="wldn-ops", At=iso(10))]
+        assert plan.sweep_judged("mac-studio", rows_, [c7], es + answered, owners, set(), set(), NOW)["moved"] == []
+        same = self.posts(("op/mac-studio/7", "req_7", {"Heads": f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1}"}))
+        assert plan.sweep_judged("mac-studio", self.rows(es, same), [c7], es + same, owners, set(), set(), NOW)["moved"] == []
