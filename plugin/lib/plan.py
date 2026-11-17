@@ -11242,21 +11242,22 @@ def row_gone(key, entries, kits=(), kit_of=None, rows=()):
 def step_card_moved(c, row, entries):
     """The change note of a step's card whose row's heads it does not name as they stand (record 0070 Decision 7), from
     the card (c), its row and the drive's run record: "<env> waits on it too" for a host its row carries that the card
-    does not name, "<env>'s no longer waits on you" for one it names that its row does not; None when they agree, for a
-    card the user answered, which waits for its settle, and for any card but a step's."""
+    does not name, "<env>'s is recorded <state>" for one it names that its row does not, as crew ops step notes them;
+    None when they agree, for a card the user answered, which waits for its settle, and for any card but a step's."""
     import ops  # ops.py imports nothing of this module
     if not (c.get("key") or "").startswith("op/") or "heads" not in row:
         return None
     if any(e.get("Act") == "card.answer" and e.get("Card") == c["card"] and not e.get("Refused") for e in entries):
         return None
     es = [e for e in entries if (e.get("Act") or "").startswith("ops.")]
-    shown = [ops.head_word(k) for k in ops.card_steps(es, entries, c["key"], c["card"])]
+    named, steps = ops.card_steps(es, entries, c["key"], c["card"]), ops.state(es)[2]
     now = list(row.get("heads") or [])
-    if set(shown) == set(now):
+    if {ops.head_word(k) for k in named} == set(now):
         return None
-    came = [w.partition("@")[0] for w in now if w not in shown]
-    went = [w.partition("@")[0] for w in shown if w not in now]
-    return "; ".join([f"{x} waits on it too" for x in came] + [f"{x}'s no longer waits on you" for x in went])
+    came = [w.partition("@")[0] for w in now if w not in {ops.head_word(k) for k in named}]
+    went = [(k[0], (steps.get(k) or {}).get("State")) for k in sorted(named) if ops.head_word(k) not in now]
+    return "; ".join([f"{x} waits on it too" for x in came]
+                     + [f"{x}'s is recorded {said}" if said else f"{x}'s no longer waits on you" for x, said in went])
 
 
 def record_settled(key, entries, kits=()):

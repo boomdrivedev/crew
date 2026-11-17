@@ -2070,10 +2070,11 @@ class TestStep:
                                  why="Only you can: the password is in your vault, and no check can tell it was done.",
                                  where="a terminal on mac-studio", done="kanidm's login page takes the new password.",
                                  commands=["clan vars generate swancloud-srv --generator kanidm-admin --regenerate",
-                                           "clan machines update swancloud-srv"], follows="req_d1"))
+                                           "clan machines update swancloud-srv"], follows="req_d1", to="c882cff" + "0" * 33))
         c = b["card"]
         assert b["key"] == "op/srv/1" and (c["kind"], c["intent"], c["follows"]) == ("action", "do", "req_d1")
-        assert c["title"] == "After srv's deploy: rotate the kanidm admin password"
+        assert c["title"] == "rotate the kanidm admin password, after srv's deploy" and b["heads"] == ["srv@c882cff" + "0" * 33]
+        assert c["summary"] == "Only you can: the password is in your vault, and no check can tell it was done. It waits on you on srv."
         assert c["action"]["where"] == "a terminal on mac-studio" and c["action"]["done"] == "kanidm's login page takes the new password."
         assert [s["command"] for s in c["action"]["steps"]] == ["clan vars generate swancloud-srv --generator kanidm-admin --regenerate",
                                                                 "clan machines update swancloud-srv"]
@@ -2105,7 +2106,7 @@ class TestStep:
     def test_a_users_step_with_no_gate_keeps_its_card(self):
         c = built.step_card(dict(env="srv", n=1, text="Open https://example.com and rotate the key", doer="user", held=False,
                                  gate=None, to="4f2a9c1" + "0" * 33))["card"]
-        assert c["title"] == "After srv's deploy: Open https://example.com and rotate the key"
+        assert c["title"] == "Open https://example.com and rotate the key, after srv's deploy"
         assert c["action"] == {"steps": [{"text": "Open https://example.com and rotate the key"}]}
 
     LONG = ("Sign Herdr in to Pending You again on this host, so it holds the scope 0.41.0 asks for (`presence:focus`): "
@@ -2122,12 +2123,13 @@ class TestStep:
         first = built.SENTENCE.split(self.LONG)[0].replace("`", "")
         assert len(self.LONG) == 370 and c["action"]["steps"] == [{"text": first}] and len(first) <= built.STEP
         assert c["artifacts"] == [{"kind": "code", "lang": "markdown", "title": "The step", "ref": "op-deneb-20.md", "lines": [self.LONG]}]
-        assert c["title"].startswith("After deneb's deploy: Sign Herdr in") and c["title"].endswith("…") and len(c["title"]) <= built.TITLE
-        assert c["summary"] == "The scope is granted only by a sign-in you approve."
+        assert c["title"].startswith("Sign Herdr in") and c["title"].endswith("…, on deneb") and len(c["title"]) <= built.TITLE
+        assert c["summary"] == "The scope is granted only by a sign-in you approve. It waits on you on deneb."
 
     def test_a_long_step_whose_summary_holds_its_words_whole_carries_no_face(self):
         c = self.users()
-        assert c["summary"] == self.LONG.replace("`", "") and "artifacts" not in c and len(c["action"]["steps"][0]["text"]) <= built.STEP
+        assert c["summary"] == self.LONG.replace("`", "") + " It waits on you on deneb." and "artifacts" not in c
+        assert len(c["action"]["steps"][0]["text"]) <= built.STEP
 
     def test_a_long_first_sentence_is_cut_at_whole_words_in_its_step_and_a_step_past_any_summary_is_whole_on_the_face(self):
         words = " ".join(["word"] * 120) + "."
@@ -2140,11 +2142,11 @@ class TestStep:
         c = self.users(text="update every host", commands=[long, "clan machines update swancloud-srv"])
         assert c["action"]["steps"] == [{"text": "Run this command.", "command": long},
                                         {"text": "clan machines update swancloud-srv", "command": "clan machines update swancloud-srv"}]
-        assert "artifacts" not in c and c["title"] == "After deneb's deploy: update every host"
+        assert "artifacts" not in c and c["title"] == "update every host, on deneb"
 
     def test_a_short_step_with_commands_and_a_why_is_whole_in_its_title_and_carries_no_face(self):
         c = self.users(text="rotate the key", why="Only you hold it.", commands=["rotate-key"])
-        assert c["title"] == "After deneb's deploy: rotate the key" and "artifacts" not in c
+        assert c["title"] == "rotate the key, on deneb" and "artifacts" not in c
 
     def test_a_gates_link_longer_than_a_step_holds_is_its_where_its_step_saying_to_open_it(self):
         run = self.RUN + "?" + "x" * 300

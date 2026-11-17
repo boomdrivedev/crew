@@ -2884,3 +2884,7 @@ class TestStepCardsFold:
         assert plan.sweep_judged("mac-studio", rows_, [c7], es + answered, owners, set(), set(), NOW)["moved"] == []
         same = self.posts(("op/mac-studio/7", "req_7", {"Heads": f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1}"}))
         assert plan.sweep_judged("mac-studio", self.rows(es, same), [c7], es + same, owners, set(), set(), NOW)["moved"] == []
+        from test_ops import DISK, e
+        done = es + [e("ops.step", env="deneb", minutes=9, Head=S1, Key=DISK, State="done", Doer="user")]
+        assert plan.sweep_judged("mac-studio", self.rows(done, same), [c7], done + same, owners, set(), set(), NOW)["moved"] == [
+            (c7, self.rows(done, same)[0], "deneb's is recorded done")]
