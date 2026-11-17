@@ -267,7 +267,7 @@ Once a bolt can land, its line on its kit's row under land SHALL say how it land
 - **THEN** `b`'s line says it stays, and lands on the user's send of `land/crew`
 
 #### Scenario: A stopped landing
-- **WHEN** the runner answered `b`'s land on proof at its head refused, a place on `bolt/b` being live
+- **WHEN** the runner answered `b`'s land on proof at its head refused, Flume naming no place on `bolt/b`
 - **THEN** `b`'s line says it can land, that its last landing at that head was stopped, in the runner's words, nothing of the bolt's, and that it lands on the user's send of `land/crew`
 
 #### Scenario: Under a hold
@@ -291,3 +291,14 @@ A kit's row under land SHALL be raised while a bolt of the kit that landed on pr
 #### Scenario: Tapped
 - **WHEN** the user taps the notice telling `y` and `w`, and no bolt of crew waits to land
 - **THEN** the rail has no row for crew under land
+
+### Requirement: A bolt whose land waits on its branch says so
+While Flume names a place on the branch of a bolt that can land, its line on its kit's row under land SHALL say, after how it lands, that no land of it is asked while those places are live, each named by its folder, or, where its last land waits on them, that that land waits, nothing of the bolt's, crew asking the runner to land it once none is live.
+
+#### Scenario: Its land on proof waits
+- **WHEN** crew posted `b`'s land on proof at `4e8d2c1` as request 57, and the runner answered it refused while Flume names `fix--b-1` on `bolt/b`
+- **THEN** `b`'s line says it lands on proof, and that its landing at `4e8d2c1` waits on `fix--b-1` on its branch, nothing of the bolt's, crew asking the runner to land it once none is live
+
+#### Scenario: No land posted yet
+- **WHEN** `b`, not marked to stay, reads proven, no land of it stands, and Flume names `fix--b-notes` on `bolt/b`
+- **THEN** `b`'s line says it lands on proof, and that no land of it is asked while `fix--b-notes` is live on `bolt/b`, crew asking the runner once none is
