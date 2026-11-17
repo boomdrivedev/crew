@@ -340,7 +340,7 @@ class TestCrossedTakesMain:
         """x, started, its unit a launched as a start launches it."""
         from facts import FactsWrite, flume_plan, madswan_fleet
         w = FactsWrite(flume_plan([("x", None, "flume")], [("a", "x", [], "unit", [])]), label="madswan")
-        plan.reach_places(madswan_fleet(), w, "x")
+        plan.reach_places(madswan_fleet(), w, "x", priority=1000000000000)
         return w, "madswan"
 
     def test_a_landing_refused_for_a_conflict_launches_one_take_main_fix_with_sluices_words(self):
@@ -2514,11 +2514,29 @@ class TestLandsDue:
         out = ([dict(bolt="main--red", work=self.FIX, box=True, facts=dict(head=H2))] if fix else []) + [box(b) for b in bolts]
         return out
 
-    def due(self, rows, sent, requests=None, reads=None, posted=(), work=None):
+    def due(self, rows, sent, requests=None, reads=None, posted=(), work=None, on_main=()):
         import runner
         requests = requests if requests is not None else self.requests()
         # none of the fixtures has submitted anything: a base place live with no land reads none (runner.landing_of)
-        return runner.lands_due(rows, sent, requests, reads or self.reads(), posted, work)
+        return runner.lands_due(rows, sent, requests, reads or self.reads(), posted, work, on_main)
+
+    def test_no_land_for_work_the_runner_reports_landed_or_dropped(self):
+        """y's base place over and landed as flume 0.3.6 reports it, y still a row, and the fix of main over and dropped:
+        each row ticked, on a send or on proof, and none is due."""
+        reads = self.reads(launched={1: "landed", 4: "dropped"})
+        for card in ("req_1", None):
+            sent = {"bolt/y": (card, H1[:7]), self.FIX: (card, H2[:7])}
+            assert self.due(self.rows("y", fix=True), sent, reads=reads) == []
+        assert self.due(self.rows("y", fix=True), {"bolt/y": ("req_1", H1[:7]), self.FIX: ("req_1", H2[:7])}) == [
+            (self.FIX, 4), ("bolt/y", 1)]  # the same rows, live, are due
+
+    def test_no_land_for_a_bolt_read_landed_on_its_kits_main(self):
+        """y read landed on its kit's main, its base place live with no land: no land of it is due on a send or on proof,
+        and z beside it stays due."""
+        for card in ("req_1", None):
+            sent = {"bolt/y": (card, H1[:7]), "bolt/z": (card, H1[:7])}
+            assert self.due(self.rows("y", "z"), sent, on_main={"y"}) == [("bolt/z", 2)]
+            assert self.due(self.rows("y", "z"), sent) == [("bolt/y", 1), ("bolt/z", 2)]
 
     def test_two_rows_in_the_cards_order(self):
         assert self.due(self.rows("z", "y"), {"bolt/y": ("req_1", H1[:7]), "bolt/z": ("req_1", H1[:7])}) == [("bolt/z", 2), ("bolt/y", 1)]
@@ -2679,6 +2697,34 @@ class TestTheRaisePostsTheLands:
         shown = plan.card_heads("y@abc1234 z@abc1234")
         assert plan.lands_sent(entries, "land/crew", "swancloud-ops", "req_k1", shown, ["y"]) == {
             "bolt/w": ("req_k0", "1111111"), self.FIX: ("req_k0", "2222222"), "bolt/y": ("req_k1", "abc1234")}
+
+    def test_a_proven_bolt_already_on_main_is_posted_no_land_on_proof(self, monkeypatch):
+        """rail-cards "On main before the runner reports it" (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7):
+        GitHub's main holds y's work, its unit a's place landed on bolt/y, its base place live with no land standing, y
+        proven and not marked to stay: lands_post on proof reads y landed on main before its write, posts no land of it
+        and writes nothing, where the same row would be due a land were main not read."""
+        import runner
+        from facts import FactsWrite, launched, ran
+        monkeypatch.setenv("CREW_AGENT", "swancloud-ops")
+        on_main(monkeypatch)
+        p, requests = launched(["y"], work=[("a", "y", [], "unit", [])])  # a's launch request 1, y's base place 2
+        reads = ran({1: "flume-0.20.0/landed-held", 2: "flume-0.17.0/bolt-submitted"}, label="swancloud", commits={1: ON_MAIN_UNIT})
+        monkeypatch.setattr(plan, "plan_of", lambda fleet, label: p)
+        monkeypatch.setattr(plan, "runner_facts", lambda fleet, label: (requests, reads))
+        written = []
+
+        def write(fleet, label, change, subject, **k):  # the write applied at a tip holding the plan and requests.rec as read
+            w = FactsWrite(p.text(), files={"requests.rec": runner.REQUESTS + "".join("\n" + "\n".join(r.lines()) + "\n" for r in requests)},
+                           label=label, entries=list(ON_MAIN_ENTRIES))
+            change(w)  # raises plan.Unposted where nothing is due, so nothing is written
+            written.append(w.subject)
+            return "c" * 40
+        monkeypatch.setattr(plan, "write", write)
+        rows, sent = [box("y", ON_MAIN_HEAD)], {"bolt/y": (None, ON_MAIN_HEAD[:7])}
+        assert runner.lands_due(rows, sent, requests, reads) == [("bolt/y", 2)]
+        assert plan.landed_on_main(FLEET, "swancloud", rows, reads) == {"y"}
+        assert plan.lands_post(FLEET, "swancloud", "crew", "swancloud-ops", rows, sent, reads, proof=True) == []
+        assert written == []
 
     def test_a_raise_reading_the_send_posts_the_lands_of_the_ticked_rows_and_a_second_raise_none(self, monkeypatch, capsys):
         """rail-cards "Read with no session of ops's running" and "Two bolts sent": the user ticked y and z; the raise

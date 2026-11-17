@@ -302,7 +302,7 @@ def test_a_request_is_written_in_the_commit_of_the_plan_write_that_occasions_it_
 
     def start(w):
         w.plan.insert(plan.Rec("Bolt", [("Bolt", "b"), ("Repo", "afterthought/crew"), ("Goal", "Start."), ("Path", "flume")]))
-        act, work, given = runner.bolt_launch(w.plan, "b", state.LABEL)
+        act, work, given = runner.bolt_launch(w.plan, "b", state.LABEL, runner.FIRST)
         assert plan.request(w, act, work, **given) == 1
         assert launch_of_a(w) == 2
         return []

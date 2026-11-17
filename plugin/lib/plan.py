@@ -2577,30 +2577,36 @@ def crossed_bolt(plan, bolt):
     return b is not None and b.get("Path") == "flume"
 
 
-def reach_places(fleet, w, bolt, again=()):
+def reach_places(fleet, w, bolt, again=(), priority=None):
     """A plan write's own act on a started bolt (Decisions 5 to 7 of teams-cross-to-flume-as-their-bolts-land): the
     requests runner.reach decides, its launches, drops and launches anew, each in the bolt's repository for the runner
     whose configuration names it to take (the user's ruling of 2026-11-01), appended in the write's own commit
-    (request), then the priorities the plan's order changed (reprioritise); again the work launched anew. Returns each
-    launch appended, as (its number, its work)."""
+    (request), each launch at the bolt's priority, priority where the caller numbered the bolt, as a start does, else as
+    its requests set it (runner.priority_of), refused naming the bolt where they set none, which no start leaves, since
+    crew launches nothing at a priority it can't read (read.1); again the work launched anew. It re-sets no priority, so a
+    drop, a close or work added re-sets none of any bolt's (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3).
+    Returns each launch appended, as (its number, its work)."""
     b = w.plan.bolt(bolt)
     b is None or started(b) or fail(f"bolt {bolt} is not started, so nothing of its work is launched")
     launched = []
-    for act, work, given in runner.reach(w.plan, requests_of(w).recs("Request"), bolt, w.label, again):
+    asked = runner.reach(w.plan, requests_of(w).recs("Request"), bolt, w.label, again, priority)
+    unset = [work for act, work, given in asked if act == "launch" and given.get("Priority") is None]
+    not unset or fail(f"crew can't launch {', '.join(unset)}: no request of bolt {bolt}'s sets its priority, which its start "
+                      "sets with its base place's launch, so the priority its work launches at can't be read")
+    for act, work, given in asked:
         n = request(w, act, work, **given)
         if act == "launch":
             launched.append((n, work))
-    reprioritise(w)
     return launched
 
 
-def reprioritise(w):
-    """Decision 6: a priority request appended for each launch standing on a bolt given through Flume whose priority
-    the plan's order changed (runner.priorities), in the write's own commit; nothing when the branch holds no
-    requests."""
+def reprioritise(w, numbers):
+    """A priority request appended for each place whose priority a start or a move changed (runner.priorities over
+    numbers, runner.numbering's, and the drive's runners as the write reads them), in the write's own commit
+    (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3); nothing when the branch holds no requests."""
     if w.text("requests.rec") is None:
         return
-    for launch, p in runner.priorities(w.plan, requests_of(w).recs("Request")):
+    for launch, p in runner.priorities(requests_of(w).recs("Request"), w.runners(), numbers):
         request(w, "priority", launch.get("Work"), Of=launch.get("Request"), Priority=p)
 
 
@@ -3877,7 +3883,7 @@ def lands_sent(entries, key, owner, card=None, shown=(), ticked=()):
     return out
 
 
-def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
+def lands_change(w, kit, rows, sent, reads, work=None, proof=False, on_main=()):
     """The plan write that posts the lands a send makes due (crew-lands-each-bolt-through-flumes-base-place, Decision 4;
     rail-cards "The user's send on a kit's landings card posts one land for each row it lands"), applied to w at its tip:
     the lands due there (runner.lands_due over requests.rec and the run record as the tip holds them, so a replay finds
@@ -3887,14 +3893,16 @@ def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
     and the rest written with it (Write.also). Raises Unposted where none is due at the tip. Returns [(work, request,
     head)]. With proof, the lands due on proof (a-proven-bolt-lands-on-proof, Decision 1; rail-cards "A proven bolt not
     marked to stay lands on proof"), sent keyed by no card ({work: (None, head)}), each entry marked Form: proof with no
-    Card, the write's subject saying they land on proof."""
+    Card, the write's subject saying they land on proof. on_main, the bolts of the rows crew read landed on their kit's
+    main before the write (landed_on_main), are posted no land on a send or on proof (runner.lands_due;
+    a-bolt-keeps-its-priority-until-it-is-moved, Decision 7)."""
     # re-checked at the tip it is applied to (plan.1): a hold put meanwhile posts nothing, and a land on proof is posted
     # only for a bolt the plan still holds and does not mark to stay
     if hold_on(w.plan, kit):
         raise Unposted()
     if proof:
         rows = [r for r in rows if (w.plan.bolt(r["bolt"]) or Rec("Bolt", [])).get("Stays") != "yes" and w.plan.bolt(r["bolt"])]
-    due = runner.lands_due(rows, sent, requests_of(w).recs("Request"), reads, lands_posted(w.entries()), work) if rows else []
+    due = runner.lands_due(rows, sent, requests_of(w).recs("Request"), reads, lands_posted(w.entries()), work, on_main) if rows else []
     if not due:
         raise Unposted()
     heads = {r.get("work") or f"bolt/{r['bolt']}": (r.get("facts") or {}).get("head") or "" for r in rows}
@@ -3917,17 +3925,37 @@ def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
 def lands_post(fleet, label, kit, owner, rows, sent, reads, work=None, proof=False):
     """The lands a send on a kit's landings card makes due, or with proof those due on proof, posted by one plan write in
     main-level ops's name, the card's owner (lands_change): [(work, request, head)] posted, [] where none is due, nothing
-    written."""
-    posted = []
+    written. Which bolts of its rows with a box are landed on their kit's main is read before the write (landed_on_main),
+    and none of them is posted a land."""
+    posted, on_main = [], landed_on_main(fleet, label, rows, reads)
 
     def change(w):
-        posted[:] = lands_change(w, kit, rows, sent, reads, work, proof)
+        posted[:] = lands_change(w, kit, rows, sent, reads, work, proof, on_main)
         return []
     try:
         write(fleet, label, change, f"plan({kit}): land " + ("on proof" if proof else "on the user's send"), act="bolt.submit", by=owner)
     except Unposted:
         return []
     return posted
+
+
+def landed_on_main(fleet, label, rows, reads):
+    """The bolts of a kit's landings rows with a box that crew reads landed on their kit's main (Stages.main_landing over
+    the drive's plan, its requests.rec as this command read them and its runners as the raise read them, reads, as
+    landing_on_main reads one; plan.21), read before a write posts their lands (lands_post), so the raise asks no land of
+    a bolt the first act that reads it closes (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7). A bolt whose main
+    crew can't read is not landed, and none is where the plan or the requests can't be read (read.1); a fix of main's row
+    is no bolt's."""
+    boxed = [r["bolt"] for r in rows if r.get("box") and r.get("bolt") and not (r.get("work") or "").startswith("fix/main/")]
+    pl = plan_of(fleet, label) if boxed else None
+    if pl is None:
+        return set()
+    try:
+        requests, _ = runner_facts(fleet, label)
+    except Refusal:
+        return set()
+    st = Stages(fleet, pl, {}, runs={label: (requests, reads)}, label=label)
+    return {b for b in boxed if pl.bolt(b) is not None and st.main_landing(pl.bolt(b))[0]}
 
 
 def holds_change(w, label, due, requests):
@@ -5650,8 +5678,10 @@ def op_bolt_new(ctx, a):
 def op_bolt_start(ctx, a):
     """crew bolt start <bolt>: the bolt's work started through Flume with no team (Decision 14 of
     the-team-machinery-leaves; crew-lands-each-bolt-through-flumes-base-place, Decision 3): in one plan write, the bolt
-    marked Path: flume, the launch of its base place, of crew's kind crew/bolt on main (runner.bolt_launch), and then a
-    launch of each of its units and chores on bolt/<bolt> (reach_places), each in its repository for the runner whose
+    marked Path: flume, its number among the started bolts (runner.numbering; a-bolt-keeps-its-priority-until-it-is-moved,
+    Decision 3), with a priority for each place of another bolt only where the bolts are numbered afresh (reprioritise),
+    the launch of its base place at that number, of crew's kind crew/bolt on main (runner.bolt_launch), and then a
+    launch of each of its units and chores on bolt/<bolt> at the same (reach_places), each in its repository for the runner whose
     configuration names it to take, starting no agent, making no branch and reading no host (record 0056 point 2). A
     proposal may hold it, and the user runs it directly (roles.1, may_write). Refused, with the plan unchanged and
     nothing requested, while no runner answers for the drive (runner.runnerless), and for a bolt started already,
@@ -5671,14 +5701,18 @@ def op_bolt_start(ctx, a):
             not why or fail(why)
         else:
             s.set("Path", "flume")
-            asked = [runner.bolt_launch(w.plan, a.bolt, w.label)]
+            have = requests_of(w).recs("Request")
+            numbers = runner.numbering(w.plan, have, a.bolt)
+            reprioritise(w, numbers)
+            seen["number"] = numbers.get(a.bolt, runner.priority_of(have, a.bolt))
+            asked = [runner.bolt_launch(w.plan, a.bolt, w.label, seen["number"])]
         if getattr(a, "stays", False):
             s.set("Stays", "yes")
         for act, work, given in asked:
             n = request(w, act, work, **given)
             if act == "launch":
                 seen["bolt"] = n
-        seen["launched"] = reach_places(fleet, w, a.bolt)
+        seen["launched"] = reach_places(fleet, w, a.bolt, priority=seen.get("number"))
         return [a.bolt]
 
     def after(repo, sha):
@@ -5790,6 +5824,10 @@ def op_plan_go(ctx, a):
 
 
 def op_bolt_order(ctx, a):
+    """crew bolt order <bolt> --first | --last | --before <other>: the bolt moved in the plan's order, and, for a started
+    bolt, a priority appended for each unfinished place of it alone, its base place among them, where the move takes it
+    out of order with its started neighbours (runner.numbering, reprioritise; a-bolt-keeps-its-priority-until-it-is-moved,
+    Decision 3), none for another bolt's unless the bolts are numbered afresh; so a move applied again appends nothing."""
     label, _ = ctx.locate("Bolt", a.bolt)
 
     def change(w):
@@ -5802,7 +5840,7 @@ def op_bolt_order(ctx, a):
             o = w.bolt(a.before)
             o is not b or fail("a bolt can't go before itself")
             w.plan.insert(b, before=o)
-        reprioritise(w)
+        reprioritise(w, runner.numbering(w.plan, requests_of(w).recs("Request"), a.bolt))
         return [a.bolt]
     where = "first" if a.first else "last" if a.last else f"before {a.before}"
     return Op(label, change, f"plan({a.bolt}): order the bolt {where}", "bolt.order", on=[f"bolt/{a.bolt}"])
@@ -8892,7 +8930,7 @@ def main_fix_change(fleet, w, repo, name, mode, words):
         not why or fail(why)
         w.subject = f"plan(main): drop fix {name} of {kit}"
         return dict(n=request(w, "drop", work, Of=launch.get("Request")), host=w.taker(launch))
-    launched, why = runner.main_fix_launch(w.plan, requests, w.label, repo, name, words, bool(w.runners()))
+    launched, why = runner.main_fix_launch(requests, w.label, repo, name, words, bool(w.runners()))
     not why or fail(why)
     act, work, given = launched
     w.subject = f"plan(main): fix {name} of {kit}"

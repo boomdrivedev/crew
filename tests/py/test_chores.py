@@ -5,7 +5,7 @@ import argparse
 
 import pytest
 
-from facts import FLEET, FactsWrite, apply, crew_read, known, launched, madswan_fleet, plan_text, ran, units_of
+from facts import FLEET, FactsWrite, apply, based, crew_read, known, launched, madswan_fleet, plan_text, ran, units_of
 
 import cards
 import plan
@@ -24,9 +24,9 @@ def writer(monkeypatch):
 
 def fresh(bolts=BOLTS):
     """A started bolt of a unit, a chore and a unit, a chore queued, and a unit in another bolt; the bolts started as
-    bolts says."""
-    return FactsWrite(plan_text(bolts=bolts, units=[("a", KIT, TE, []), ("bump", KIT, TE, [], "chore"), ("b", KIT, TE, []),
-                                                    ("tidy", KIT, None, [], "chore"), ("c", KIT, "console-pages", [])]))
+    bolts says, each with its base place launched as its start leaves it (based)."""
+    return based(FactsWrite(plan_text(bolts=bolts, units=[("a", KIT, TE, []), ("bump", KIT, TE, [], "chore"), ("b", KIT, TE, []),
+                                                          ("tidy", KIT, None, [], "chore"), ("c", KIT, "console-pages", [])])))
 
 
 def run(w, *dos, stages=None, taken=(), chores_taken=()):
@@ -109,7 +109,7 @@ class TestCommands:
 
     def test_a_signal_routes_to_the_chore_in_the_same_write(self, monkeypatch):
         monkeypatch.setenv("CREW_AGENT", "chuck@mac-studio")
-        w = FactsWrite(plan_text(bolts=BOLTS, units=[]), files={"moves.rec": plan.MOVES, "signals/s/01-x.md": "---\nsignal: s/01-x\n---\n"})
+        w = based(FactsWrite(plan_text(bolts=BOLTS, units=[]), files={"moves.rec": plan.MOVES, "signals/s/01-x.md": "---\nsignal: s/01-x\n---\n"}))
         op = plan.op_unit_add(known(w), plan.do_args("wldn", f'chore add pin "Pin." --bolt {TE} --signal s/01-x'))
         op.change(w)
         assert "Target: chore/pin" in w.files["moves.rec"] and op.act == "chore.add"
@@ -117,7 +117,7 @@ class TestCommands:
 
     def test_a_signals_short_id_routes_the_signal_it_numbers_by_its_full_id(self, monkeypatch):
         monkeypatch.setenv("CREW_AGENT", "chuck@mac-studio")
-        w = FactsWrite(plan_text(bolts=BOLTS, units=[]), files={"moves.rec": plan.MOVES, "signals/s/01-x.md": "---\nsignal: s/01-x\n---\n"})
+        w = based(FactsWrite(plan_text(bolts=BOLTS, units=[]), files={"moves.rec": plan.MOVES, "signals/s/01-x.md": "---\nsignal: s/01-x\n---\n"}))
         op = plan.op_unit_add(known(w), plan.do_args("wldn", f'chore add pin "Pin." --bolt {TE} --signal s/01'))
         op.change(w)
         assert "Signal: s/01-x\nMove: route\nTarget: chore/pin" in w.files["moves.rec"] and "Source: signals/s/01-x" in w.plan.text()

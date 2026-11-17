@@ -1419,15 +1419,17 @@ def test_a_place_over_as_done_or_in_a_phase_crew_does_not_read_is_unknown_saying
 
 
 class TestPriorities:
-    """A launch's priority is its bolt's place among the plan's started bolts, counted from the end, and a write that
-    launches or reorders bolts sends each priority the plan's order changed (Decision 6)."""
+    """A launch carries its bolt's priority, read from the bolt's requests, which a started bolt keeps until it is moved;
+    a start places it between its started neighbours, a move re-sets its own places alone, and finished work and a fix
+    of main from before are judged apart (a-bolt-keeps-its-priority-until-it-is-moved, Decisions 1 to 6)."""
     FLEET = madswan_fleet()
 
     @staticmethod
-    def write(*bolts):
-        """madswan's plan with each bolt (name, Path or None) holding one unit named after it, its work built by crw-4."""
+    def write(*bolts, runners=None):
+        """madswan's plan with each bolt (name, Path or None) holding one unit named after it, deneb's runner answering
+        for the drive unless runners are given."""
         return FactsWrite(flume_plan([(b, None, p) for b, p in bolts], [(f"{b}-unit", b, [], "unit", []) for b, _ in bolts]),
-                          label="madswan")
+                          label="madswan", runners=ran() if runners is None else runners)
 
     @staticmethod
     def priorities(w):
@@ -1442,42 +1444,91 @@ class TestPriorities:
         return [tuple(v) for v in last.values()]
 
     def start(self, w, bolt):
-        """What a start appends: the bolt's base place's launch, then its pieces' (Decision 3)."""
-        w.plan.bolt(bolt).set("Path", "flume")
-        act, work, given = runner.bolt_launch(w.plan, bolt, w.label)
-        plan.request(w, act, work, **given)
-        plan.reach_places(self.FLEET, w, bolt)
+        """crew bolt start <bolt> applied to the write (plan.op_bolt_start): the bolt numbered, its base place's launch,
+        then its pieces' (Decision 3)."""
+        from facts import apply, known
+        apply(w, f"bolt start {bolt}", ctx=known(w, fleet=self.FLEET))
 
-    def test_the_first_bolt_in_the_plan_has_the_highest(self):
-        """x and y are started, t between them and z after them planned: a planned bolt has no priority."""
-        p = plan.Plan(flume_plan([("x", None, "flume"), ("t", None, None), ("y", None, "flume"), ("z", None, None)]))
-        assert [runner.priority_of(p, b) for b in ("x", "t", "y", "z", "gone")] == [2, None, 1, None, None]
+    @staticmethod
+    def acts(w):
+        return [(r.get("Act"), r.get("Work")) for r in plan.Plan(w.files["requests.rec"]).recs("Request")]
+
+    def test_a_bolts_priority_is_the_newest_its_requests_set(self):
+        """x's base place launched at 7 and its unit a at 7, then a re-set to 9: x reads 9. y, started before bolts were
+        base places, has no launch of its own and reads its pieces' newest, 5, x's later request counting for nothing.
+        z, with no requests, reads None."""
+        rs = held(rec(1, "launch", "bolt/x", **dict(BOLT, Name="x", Priority=7)), rec(2, "launch", "unit/a", Base="bolt/x", Priority=7),
+                  rec(3, "launch", "unit/b", Base="bolt/y", Priority=3), rec(4, "launch", "unit/c", Base="bolt/y", Priority=3),
+                  rec(5, "priority", "unit/a", Of=2, Priority=9), rec(6, "priority", "unit/c", Of=4, Priority=5),
+                  rec(7, "priority", "bolt/x", Of=1, Priority=9))
+        assert [runner.priority_of(rs, b) for b in ("x", "y", "z")] == [9, 5, None]
+        assert runner.priority_of(rs[:5], "x") == 9 and runner.priority_of(rs[:4], "x") == 7
+        assert runner.priority_of([], "x") is None
+
+    @staticmethod
+    def at(*bolts):
+        """madswan's plan with each bolt in order, (name, its priority) started or (name, its priority, None) planned,
+        and requests.rec holding each priority given as its base place's launch, none for a priority of None."""
+        p = plan.Plan(flume_plan([(b[0], None, b[2] if len(b) > 2 else "flume") for b in bolts]))
+        set_ = [(b[0], b[1]) for b in bolts if b[1] is not None]
+        return p, held(*[rec(k, "launch", f"bolt/{b}", **dict(BOLT, Name=b, Priority=n)) for k, (b, n) in enumerate(set_, 1)])
+
+    def test_a_placed_bolt_takes_a_number_beside_its_started_neighbours(self):
+        """Alone, FIRST; above the top, its plus SPACING; below the bottom, its less SPACING; between two, the whole
+        number halfway between theirs; and t, planned with a number its requests set, is no neighbour."""
+        assert (runner.SPACING, runner.FIRST, runner.MAIN_PRIORITY) == (1000000, 1000000000000, 2000000000000)
+        assert runner.numbering(*self.at(("x", None)), "x") == {"x": 1000000000000}
+        assert runner.numbering(*self.at(("x", None), ("y", 1000000000000)), "x") == {"x": 1000001000000}
+        assert runner.numbering(*self.at(("x", 1000000000000), ("y", None)), "y") == {"y": 999999000000}
+        assert runner.numbering(*self.at(("x", 1000001000000), ("y", None), ("z", 1000000000000)), "y") == {"y": 1000000500000}
+        assert runner.numbering(*self.at(("t", 1000000000000, None), ("x", None)), "x") == {"x": 1000000000000}
+        assert runner.numbering(*self.at(("t", 1000000000000, None), ("x", None)), "t") == {}
+
+    def test_a_bolt_already_in_order_keeps_its_number(self):
+        """z moved between x and y already stands between them; a bolt alone keeps any number above 0 and below a fix of
+        main's: nothing changes."""
+        assert runner.numbering(*self.at(("x", 1000002000000), ("z", 1000001500000), ("y", 1000001000000)), "z") == {}
+        assert runner.numbering(*self.at(("x", 5)), "x") == {}
+
+    def test_with_no_number_left_every_started_bolt_is_numbered_afresh(self):
+        """x, y and z at 3, 2 and 1, numbered before bolts kept theirs, z moved between x and y; a bottom at SPACING with
+        y started below it; a top at MAIN_PRIORITY less 1 with x started above it: every started bolt is numbered from
+        FIRST up, SPACING apart, and one that already stands at its number is not listed."""
+        assert runner.numbering(*self.at(("x", 3), ("z", 1), ("y", 2)), "z") == {
+            "x": 1000002000000, "z": 1000001000000, "y": 1000000000000}
+        assert runner.numbering(*self.at(("x", 3), ("z", 1), ("y", 1000000000000)), "z") == {"x": 1000002000000, "z": 1000001000000}
+        assert runner.numbering(*self.at(("x", 1000000), ("y", None)), "y") == {"x": 1000001000000, "y": 1000000000000}
+        assert runner.numbering(*self.at(("x", None), ("y", 1999999999999)), "x") == {"x": 1000001000000, "y": 1000000000000}
 
     def test_two_bolts_started_in_order(self, monkeypatch):
-        """x is started and then y, x above y in the plan: x's pieces' launches carry a higher priority than y's, each
-        naming crew's repository and no host or stream, intent madswan/<bolt> and recipient madswan/planner, after its
-        bolt's base place's launch, whose recipient is madswan/ops and whose priority is set at its launch alone, since
-        a base place takes no room in its stream."""
+        """x is started and then y, x above y in the plan: x's base place and pieces carry FIRST and y's FIRST less
+        SPACING from their launches, each naming crew's repository and no host or stream, intent madswan/<bolt>, the base
+        place's recipient madswan/ops and the pieces' madswan/planner."""
         monkeypatch.setenv("CREW_AGENT", BY)
         w = self.write(("x", None), ("y", None))
         self.start(w, "x")
         self.start(w, "y")
-        assert self.priorities(w) == [("bolt/x", "1"), ("unit/x-unit", "2"), ("bolt/y", "1"), ("unit/y-unit", "1")]
+        assert self.priorities(w) == [("bolt/x", "1000000000000"), ("unit/x-unit", "1000000000000"), ("bolt/y", "999999000000"),
+                                      ("unit/y-unit", "999999000000")]
         launches = [r for r in plan.Plan(w.files["requests.rec"]).recs("Request") if r.get("Act") == "launch"]
         assert [(r.get("Repo"), r.get("Host"), r.get("Stream"), r.get("Intent"), r.get("Recipient")) for r in launches] == [
             ("crew", None, None, "madswan/x", "madswan/ops"), ("crew", None, None, "madswan/x", "madswan/planner"),
             ("crew", None, None, "madswan/y", "madswan/ops"), ("crew", None, None, "madswan/y", "madswan/planner")]
 
-    def test_a_third_started_raises_those_above_it(self, monkeypatch):
+    def test_a_start_re_sets_no_other_bolt(self, monkeypatch):
+        """x, y and z started in turn: each start's launches carry its number, and no priority is appended."""
         monkeypatch.setenv("CREW_AGENT", BY)
         w = self.write(("x", None), ("y", None), ("z", None))
         for b in ("x", "y", "z"):
             self.start(w, b)
-        assert [p for p in self.priorities(w) if p[0].startswith("unit/")] == [("unit/x-unit", "3"), ("unit/y-unit", "2"), ("unit/z-unit", "1")]
+        assert [a for a, _ in self.acts(w)] == ["launch"] * 6
+        assert [p for p in self.priorities(w) if p[0].startswith("unit/")] == [
+            ("unit/x-unit", "1000000000000"), ("unit/y-unit", "999999000000"), ("unit/z-unit", "999998000000")]
 
-    def test_a_reorder_sends_only_what_changed(self, monkeypatch):
-        """crew bolt order puts z above y: requests.rec gains a priority for each launched place of y and z, whose
-        priorities changed, and none for x's."""
+    def test_a_reorder_re_sets_only_the_moved_bolts_places(self, monkeypatch):
+        """x, y and z started in turn, and crew bolt order z --before y: requests.rec gains a priority of z's base place
+        and its unit at the whole number halfway between x's and y's, and none for x's or y's; applied again, it gains
+        nothing."""
         from facts import apply, known
         monkeypatch.setenv("CREW_AGENT", BY)
         w = self.write(("x", None), ("y", None), ("z", None))
@@ -1486,10 +1537,35 @@ class TestPriorities:
         n = len(plan.Plan(w.files["requests.rec"]).recs("Request"))
         apply(w, "bolt order z --before y", ctx=known(w, fleet=self.FLEET))
         new = plan.Plan(w.files["requests.rec"]).recs("Request")[n:]
-        assert [(r.get("Act"), r.get("Work"), r.get("Priority")) for r in new] == [
-            ("priority", "unit/y-unit", "1"), ("priority", "unit/z-unit", "2")]
+        assert [(r.get("Act"), r.get("Work"), r.get("Of"), r.get("Priority")) for r in new] == [
+            ("priority", "bolt/z", "5", "999999500000"), ("priority", "unit/z-unit", "6", "999999500000")]
         apply(w, "bolt order z --before y", ctx=known(w, fleet=self.FLEET))
         assert len(plan.Plan(w.files["requests.rec"]).recs("Request")) == n + 2
+
+    def test_a_drop_a_close_or_work_added_re_sets_no_other_bolt(self, monkeypatch):
+        """x, y and z started: bolt drop y appends no priority for x or z; with y gone from the plan, as a close leaves
+        it, bolt order x --first appends none; and unit b added to x launches at x's priority and appends none. A started
+        bolt whose requests set no priority has nothing launched at one crew can't read."""
+        from facts import apply, known
+        monkeypatch.setenv("CREW_AGENT", BY)
+        for do in ('bolt drop y "Not now."', None, 'unit add b "Build b." --bolt x'):
+            w = self.write(("x", None), ("y", None), ("z", None))
+            for b in ("x", "y", "z"):
+                self.start(w, b)
+            n = len(self.acts(w))
+            if do is None:
+                w.plan.remove(w.plan.item("y-unit"))
+                w.plan.remove(w.plan.bolt("y"))
+                do = "bolt order x --first"
+            apply(w, do, ctx=known(w, fleet=self.FLEET))
+            new = plan.Plan(w.files["requests.rec"]).recs("Request")[n:]
+            assert "priority" not in [r.get("Act") for r in new], do
+            if do.startswith("unit add"):
+                assert [(r.get("Act"), r.get("Work"), r.get("Priority")) for r in new] == [("launch", "unit/b", "1000000000000")]
+        w = self.write(("x", "flume"))
+        with pytest.raises(Refusal, match=r"^crew can't launch unit/x-unit: no request of bolt x's sets its priority, "):
+            plan.reach_places(self.FLEET, w, "x")
+        assert "requests.rec" not in w.files
 
     def test_a_reorder_on_a_branch_with_no_requests_writes_none(self):
         from facts import apply, known
@@ -1497,15 +1573,39 @@ class TestPriorities:
         apply(w, "bolt order y --first", ctx=known(w, fleet=self.FLEET))
         assert "requests.rec" not in w.files
 
-    def test_a_dropped_launch_a_fix_of_main_and_a_bolt_gone_take_no_priority(self):
-        p = plan.Plan(flume_plan([("x", None, "flume"), ("y", None, "flume")]))
-        fix = dict(Base="main", Intent="madswan/main/crew", Recipient="madswan/ops", Name="main--red", Hold="submission")
-        rs = held(rec(1, "launch", Base="bolt/x"), rec(2, "drop", Of=1), rec(3, "launch", "unit/b", Base="bolt/gone"),
-                  rec(4, "launch", "fix/main/crew/red", **fix), rec(5, "launch", "unit/c", Base="bolt/y", Priority=7),
-                  rec(6, "priority", "unit/c", Of=5, Priority=1))
-        assert runner.priorities(p, rs) == []
-        assert [(r.get("Request"), n) for r, n in runner.priorities(p, rs[:5])] == [("5", 1)]
+    def test_finished_or_dropped_work_takes_no_priority(self):
+        """x and y moved, their numbers now 9: x's unit a dropped by crew, b refused by the runner, c over and landed on
+        the bolt, d over and dropped, and y's base place refused take none; x's base place, live, and e, in code, take 9."""
+        rs = held(rec(1, "launch", "bolt/x", **dict(BOLT, Name="x", Priority=5)), rec(2, "launch", "unit/a", Base="bolt/x", Priority=5),
+                  rec(3, "drop", "unit/a", Of=2), rec(4, "launch", "unit/b", Base="bolt/x", Priority=5),
+                  rec(5, "launch", "unit/c", Base="bolt/x", Priority=5), rec(6, "launch", "unit/d", Base="bolt/x", Priority=5),
+                  rec(7, "launch", "unit/e", Base="bolt/x", Priority=5), rec(8, "launch", "bolt/y", **dict(BOLT, Name="y", Priority=4)))
+        reads = ran({1: "flume-0.17.0/bolt-submitted", 5: "landed", 6: "dropped", 7: "code"},
+                    refused={4: "no room for it", 8: "crew/bolt@1 is not locked on deneb"})
+        assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, {"x": 9, "y": 9})] == [("1", 9), ("7", 9)]
+        assert [runner.finished(rs, reads, r) for r in rs if r.get("Act") == "launch"] == [False, False, True, True, True, False, True]
 
+    def test_a_place_crew_cant_read_is_re_set(self):
+        """x's unit a launched on a runner crew does not read: crew can't tell it finished, so it is re-set."""
+        rs = held(rec(1, "launch", "unit/a", Base="bolt/x", Priority=5))
+        unread = {"deneb": runner.host_read("madswan", "deneb", TIP, {}, {})}
+        for reads in (unread, {}):
+            assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, {"x": 9})] == [("1", 9)]
+        assert runner.priorities(rs, unread, {"x": 5}) == []
+
+
+    def test_a_fix_of_main_from_before_is_re_set_once(self):
+        """A fix of main launched at 3 before bolts kept theirs, its place live, is listed at MAIN_PRIORITY on the next
+        start or move, whatever bolts it renumbers, and not once a priority of it at MAIN_PRIORITY stands; one dropped,
+        or over, takes none."""
+        fix = dict(Base="main", Intent="madswan/main/crew", Recipient="madswan/ops", Name="main--red", Hold="submission")
+        rs = held(rec(1, "launch", "fix/main/crew/red", **dict(fix, Priority=3)))
+        reads = ran({1: "code"})
+        for numbers in ({}, {"x": 9}):
+            assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, numbers)] == [("1", 2000000000000)]
+        assert runner.priorities(held(*rs, rec(2, "priority", "fix/main/crew/red", Of=1, Priority=2000000000000)), reads, {}) == []
+        assert runner.priorities(held(*rs, rec(2, "drop", "fix/main/crew/red", Of=1)), reads, {}) == []
+        assert runner.priorities(rs, ran({1: "landed"}), {}) == []
 
 class TestBoltLaunch:
     """A start launches the bolt's base place, then its pieces (bolt-teams "A start launches the bolt's base place before
@@ -1520,15 +1620,15 @@ class TestBoltLaunch:
 
     def start(self, w, bolt):
         w.plan.bolt(bolt).set("Path", "flume")
-        act, work, given = runner.bolt_launch(w.plan, bolt, w.label)
+        act, work, given = runner.bolt_launch(w.plan, bolt, w.label, runner.FIRST)
         n = plan.request(w, act, work, **given)
         return n, plan.reach_places(self.FLEET, w, bolt)
 
     def test_the_launch_is_crews_kind_on_main_with_ops_its_recipient_and_no_brief_or_after(self):
         w = self.write("x")
         w.plan.bolt("x").set("Path", "flume")
-        assert runner.bolt_launch(w.plan, "x", "madswan") == ("launch", "bolt/x", {
-            "Repo": "crew", "Kind": "crew/bolt", "Name": "x", "Base": "main", "Priority": 1, "Intent": "madswan/x",
+        assert runner.bolt_launch(w.plan, "x", "madswan", 1000000000000) == ("launch", "bolt/x", {
+            "Repo": "crew", "Kind": "crew/bolt", "Name": "x", "Base": "main", "Priority": 1000000000000, "Intent": "madswan/x",
             "Recipient": "madswan/ops"})
 
     def test_its_pieces_follow_it_on_its_branch_naming_no_after_on_it(self, monkeypatch):
@@ -1540,11 +1640,13 @@ class TestBoltLaunch:
         assert [(r.get("Work"), r.get("Base"), r.all("After")) for r in rs] == [
             ("bolt/x", "main", []), ("unit/a", "bolt/x", []), ("unit/b", "bolt/x", ["2"])]
 
-    def test_its_priority_is_its_bolts_place_in_the_plan(self):
+    def test_its_priority_is_the_one_it_is_given(self):
+        """The priority a start numbers the bolt at, whatever the bolt's place in the plan."""
         w = self.write("x", "y")
         for b in ("x", "y"):
             w.plan.bolt(b).set("Path", "flume")
-        assert [runner.bolt_launch(w.plan, b, "madswan")[2]["Priority"] for b in ("x", "y")] == [2, 1]
+        assert [runner.bolt_launch(w.plan, b, "madswan", p)[2]["Priority"] for b, p in (("x", 999999000000), ("y", 1000000000000))] == [
+            999999000000, 1000000000000]
 
     def requests(self, *answers):
         """requests.rec after x's start, its base place request 1 and its units 2 and 3, and the runner answering as
@@ -1793,7 +1895,7 @@ class TestBaseDrop:
         monkeypatch.setenv("CREW_AGENT", BY)
         w = FactsWrite(flume_plan([("x", None, None)], [("a", "x", [], "unit", [])]), label="madswan", runners=ran())
         w.plan.bolt("x").set("Path", "flume")
-        act, work, given = runner.bolt_launch(w.plan, "x", "madswan")
+        act, work, given = runner.bolt_launch(w.plan, "x", "madswan", runner.FIRST)
         plan.request(w, act, work, **given)
         plan.reach_places(self.FLEET, w, "x")
         apply(w, 'bolt drop x "Not now."', ctx=known(w, fleet=self.FLEET))
