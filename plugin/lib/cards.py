@@ -409,6 +409,38 @@ def new_units(argvs):
                               and (a.sub == "add" or (a.sub == "move" and a.bolt != "queue"))))
 
 
+def new_row_words(kind, unit, bolt, repo, came_from, running, starts, after):
+    """What a proposal's card says of one unit or chore it makes new, from plain facts (plan-proposals "Each new unit's
+    choice says what happens to it" and "Leaving a new unit out says where it stays"): kind, add or move, a chore's
+    command the unit's; the bolt it goes into, None for its queue; repo, the queue's repository, for an add to a queue
+    or a move from one; came_from, the bolt a move leaves, None for its queue; running, whether its bolt is started at
+    the tip; starts, whether the proposal starts it; after, the units it comes after once applied. {go, went, leave,
+    left}: the label for going ahead and the sentence of what then happens, the label for leaving it out and the clause
+    of what then happens, lower-case to follow "Left out, ". went never names where a move comes from, which left
+    names, so a box's two outcomes fit one consequence."""
+    moved = kind == "move"
+    if bolt is None:
+        go, went = f"Queue {unit} for later", f"It waits in the {repo} queue until a bolt takes it."
+    else:
+        joins = f"It moves into bolt {bolt}" if moved else f"It joins bolt {bolt}"
+        if running or starts:
+            which = "which is running" if running else "which this change starts"
+            if after:
+                go = f"Start {unit} after the work it needs"
+                went = f"{joins}, {which}, and is built once {joined(list(after))} {'has' if len(after) == 1 else 'have'} landed on it."
+            else:
+                go, went = f"Start {unit} now", f"{joins}, {which}, and is built now."
+        else:
+            go = f"Move {unit} in for later" if moved else f"Add {unit} for later"
+            went = f"{joins}, which has not started, and is built once {bolt} starts."
+    if not moved:
+        leave, left = f"Leave {unit} out", "it is not added to the plan."
+    else:
+        leave = f"Leave {unit} out for now"
+        left = f"it stays in the {repo} queue." if came_from is None else f"it stays in bolt {came_from}."
+    return {"go": go, "went": went, "leave": leave, "left": left}
+
+
 def chore_words(words):
     """A chore's words as a proposal's card says them beside its name, where a unit's intent goes: marked a chore's."""
     return f"Chore: {words}" if words else words
@@ -445,7 +477,7 @@ def renamed_drawn(a, before, kits, repo, where, renamed):
     return [], block("RENAME KIT", f"{a.old} → {a.new}", [x for l in says for x in wrap(l, SAYS)])
 
 
-STAYS = "stays unlanded until your send"  # what a proposal's card says of a bolt its command marks to stay (record 0067)
+STAYS = "stays unlanded until you say to land it"  # what a proposal's card says of a bolt its command marks to stay (record 0067)
 
 
 def stays_of(a):
@@ -1539,38 +1571,45 @@ def proposal_card(f):
               if len(said) <= room or k == 1)
     title = f"Plan change to {to}" + (f": {counts}" if counts else "")
     new, made, units, rows = new_units(argvs), {a.unit: a for _, a in proposal_rows(argvs)}, {}, []
+    starting = {a.bolt for a in argvs if (a.cmd, a.sub) == ("bolt", "start")}
     for a in argvs:  # the new units and the dropped ones, in the order the commands name them, for the face
         if a.cmd not in ("unit", "chore") or a.unit in units:
             continue
         if made.get(a.unit) is a:
             units[a.unit] = a
-            moved = a.sub == "move"
-            src = d["came_from"].get(a.unit)
-            rows.append({"id": f"add:{a.unit}", "unit": a.unit, "is": "new", "ticked": True,
-                         "label": f"Move {a.unit} in" if moved else f"Add {a.unit}", "detail": d["intent"].get(a.unit) or "",
-                         "consequence": f"Cleared: stays in {'the queue' if src is None else 'bolt ' + src}; the rest still applies"
-                         if moved else "Cleared: not added; the rest still applies"})
+            # Started as plan.started reads it, on the plan at the tip: the plan the commands leave is built with no runner.
+            into, was, now = a.bolt or None, f["before"].item(a.unit), f["after"].item(a.unit)  # never `to`, the title's
+            tip = f["before"].bolt(into) if into else None
+            words = new_row_words(a.sub, a.unit, into, a.repo if a.sub == "add" else was.get("Repo") if was else None,
+                                  d["came_from"].get(a.unit), tip is not None and tip.get("Path") == "flume", into in starting,
+                                  now.all("After") if now else [])
+            rows.append({"id": f"add:{a.unit}", "unit": a.unit, "is": "new", "ticked": True, "label": words["go"],
+                         "detail": d["intent"].get(a.unit) or "", **{k: words[k] for k in ("went", "leave", "left")}})
         elif a.sub == "drop" and a.unit not in made:
             units[a.unit] = a
     session = len(new) > CARD_NEW
     shape = proposal_form(argvs)
     also = bool(d["dropped"] or d["amended"])  # it drops or amends a unit, which no box asks
 
-    def option(r):
+    def option(r, box=True):
+        """A row's choice: on a box, its consequence what happens kept and, whole after "Left out, ", what happens not;
+        a lone unit's going ahead, what happens kept alone."""
+        left = " Left out, " + r["left"]
         return {"id": r["id"], "label": cut(r["label"], LABEL), "detail": by_words(r["detail"], DETAIL),
-                "consequence": by_words(r["consequence"], DETAIL)}
+                "consequence": by_words(r["went"], DETAIL - len(left)) + left if box else by_words(r["went"], DETAIL)}
     if shape == "approve":
-        how = ("Hold to apply it whole; to keep a unit it drops or amends, decline with a note." if also and not session
-               else "Hold to apply it whole.")
+        how = ["Approved, all of it applies."] + (["Declined, none of it does, and your note tells the planner what to keep."]
+                                                  if also and not session else [])
         form = dict(kind="approve", intent="approve", recommendedIds=["approve"],
                     approve={"action": f"Apply the plan change to {to}", "risk": "low", "reversible": True})
     elif shape == "choice":
         r = rows[0]
-        how = "Its one new unit is set as proposed; pick the other side and send to leave it out."
-        options = [option(r), {"id": "unticked", "label": cut(f"Leave {r['unit']} out", LABEL)}]
+        how = []  # its two choices say what happens
+        options = [option(r, box=False), {"id": "unticked", "label": cut(r["leave"], LABEL),
+                                          "consequence": by_words(r["left"][0].upper() + r["left"][1:], DETAIL)}]
         form = dict(kind="choice", intent="decide", options=options, recommendedIds=[r["id"]])
     else:
-        how = "Each new unit below is ticked; clear any to leave it out, and send."
+        how = ["Each new unit below goes ahead as proposed unless you leave it out."]
         g = -(-len(rows) // BOXES)
         sizes = [len(rows) // g + (1 if k < len(rows) % g else 0) for k in range(g)]
         groups = [rows[sum(sizes[:k]):sum(sizes[:k + 1])] for k in range(g)]
@@ -1581,13 +1620,14 @@ def proposal_card(f):
                      questions=[dict(id=f"rows-{k}", kind="multi", title=f"The change, part {k} of {g}: each row as proposed", **q)
                                 for k, q in enumerate(lists, 1)]))
     if shape != "approve" and also:
-        how += " What it drops or amends applies with it."
+        how.append("What it drops or amends applies with it.")
     staying = list(dict.fromkeys(a.bolt for a in argvs if stays_of(a)))  # each bolt it marks to stay, said on its face
     if staying:
-        how += f" {joined(staying)} {'stays' if len(staying) == 1 else 'stay'} unlanded until your send of its landings card."
+        how.append(f"{joined(staying)} " + ("stays unlanded until you say to land it." if len(staying) == 1 else
+                                             "stay unlanded until you say to land them."))
     case = prose(f["case"], 10 ** 6)
     said = ((f"Read it all in one session: {f['session']}\n\n" if f.get("session") else "")
-            + f"{SENTENCE.split(case)[0] if case else ''} {how}")
+            + " ".join([SENTENCE.split(case)[0] if case else ""] + how))
     paragraphs = []
     for u, a in units.items():
         if a.sub == "drop":

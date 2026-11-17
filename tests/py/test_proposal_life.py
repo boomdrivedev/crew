@@ -223,7 +223,7 @@ class TestAnswers:
         drops = ('unit drop a "Superseded."', 'unit drop x "Done elsewhere."')
         b, asks, _ = self.card(*drops)
         assert (asks, b["boxes"]) == ({"plan": None}, [])
-        assert b["card"]["summary"].endswith("to keep a unit it drops or amends, decline with a note.")
+        assert b["card"]["summary"].endswith("Declined, none of it does, and your note tells the planner what to keep.")
         assert self.sent(drops, ("plan", ["approve"])) == (list(drops), [], "Applied: dropped a and x.")
         declined = plan.with_answer({}, 4, "plan", plan.card_answer(asks, False, 4, "plan", ["decline"]), "keep x")
         assert declined == {"plan": "decline", "note": "keep x"}
