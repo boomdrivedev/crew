@@ -334,6 +334,21 @@ def numbered(w, bolt):
     return runner.numbering(w.plan, have, bolt).get(bolt)
 
 
+def based(w):
+    """The write with each started bolt of its plan, in the plan's order, given its base place's launch
+    (runner.bolt_launch) at the number a start gives it (numbered), unanswered, as its start leaves it: so a case whose
+    plan marks a bolt started, its work not yet launched, has the bolt's priority set in its requests, which a write
+    that reaches the bolt's work launches it at (plan.reach_places). The requests name their writer: set CREW_AGENT
+    first."""
+    import plan
+    import runner
+    for b in w.plan.bolts():
+        if plan.started(b):
+            act, work, given = runner.bolt_launch(w.plan, b.name(), w.label, numbered(w, b.name()))
+            plan.request(w, act, work, **given)
+    return w
+
+
 def launched(bolts, work=(), fleet=None, planned=(), base=True):
     """madswan's plan (flume_plan) with each bolt in bolts started and its work launched as a start launches it
     (plan.reach_places) at the number a start gives it (numbered), then, with base, each bolt's base place

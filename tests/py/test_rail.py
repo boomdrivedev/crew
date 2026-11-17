@@ -65,21 +65,27 @@ FOUND = [("wldn", "WilldanGroup/crew-state", "tip", None)]
 
 def runs(p=None, at=None, before=None, numbered=None, read=True):
     """wldn's requests and the runner on the box as rail_rows takes them (runs): each unit and chore of each started
-    bolt of the plan (the_plan's by default) launched as a start launches it (plan.reach_places), then each bolt's base
-    place (runner.bolt_launch), unanswered, so a started bolt is one of this crew's and not one started before bolts
-    were base places, after the requests
+    bolt of the plan (the_plan's by default) launched as a start launches it (plan.reach_places) at the number a start
+    gives it (facts.numbered), then each bolt's base place (runner.bolt_launch), unanswered, so a started bolt is one of
+    this crew's and not one started before bolts were base places, a bolt with no work to launch having its base place
+    launched in its pieces' turn, at its number, so the bolts after it are numbered below it; after the requests
     before holds (requests.rec's text), and the runner carrying each at the flume 0.3.6 status fixture at names for it
     ({unit: fixture}), zone-one landed on its bolt, so merged, unless given otherwise, and any other unanswered, and
     each request of before's at the fixture numbered names for it ({its number: fixture}); no runner read with read
     false."""
-    from facts import FactsWrite, numbered, ran
+    from facts import FactsWrite, numbered as numbering, ran
     import runner
     w = FactsWrite((p or the_plan()).text(), files={"requests.rec": before} if before else None, label="wldn")
+    based = set()
     for b in w.plan.bolts():
         if plan.started(b):
-            plan.reach_places(FLEET, w, b.name(), priority=numbered(w, b.name()))
+            given = numbering(w, b.name())
+            if not plan.reach_places(FLEET, w, b.name(), priority=given):  # no work to launch: its base place now, at its number
+                act, work, fields = runner.bolt_launch(w.plan, b.name(), "wldn", given)
+                plan.request(w, act, work, **fields)
+                based.add(b.name())
     for b in w.plan.bolts():  # each started bolt's base place, after the pieces so their numbers stand, unanswered
-        if plan.started(b):
+        if plan.started(b) and b.name() not in based:
             have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
             act, work, given = runner.bolt_launch(w.plan, b.name(), "wldn", runner.priority_of(have, b.name()))
             plan.request(w, act, work, **given)

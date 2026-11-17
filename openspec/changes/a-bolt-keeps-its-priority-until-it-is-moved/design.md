@@ -238,6 +238,13 @@ Cases:
 
 The check runs these three files.
 
+**2.5** Every other logic case whose plan marks a bolt started, its work launched by a write that reaches it, gives the bolt a priority its requests set, as its start leaves it, since `reach_places` refuses a launch at a priority it can't read:
+
+- `tests/py/facts.py` `based(w)` launches each started bolt's base place in the plan's order at `numbered`. The fixtures of `test_chores.py`, `test_unit_commands.py` and `test_proposals.py` that mark a bolt started take it.
+- `tests/py/test_rail.py` `runs` imports `facts.numbered` under another name, since its own `numbered` parameter is the runner's fixtures by request number. A started bolt with no work to launch has its base place launched in its pieces' turn, at its number, so the bolts after it are numbered below it.
+
+The check runs the logic tier whole.
+
 **3.1** `runner.lands_due(rows, sent, requests, reads, posted=(), work=None, on_main=())`: no land for a row whose bolt is in `on_main`.
 
 Cases in `tests/py/test_landings.py::TestLandsDue`:
