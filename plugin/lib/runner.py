@@ -1831,7 +1831,7 @@ def places_said(places):
     return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0] if names else "a place"
 
 
-def lands_due(rows, sent, requests, reads, posted=(), work=None):
+def lands_due(rows, sent, requests, reads, posted=(), work=None, on_main=()):
     """The lands the user's send on a kit's landings card makes due (crew-lands-each-bolt-through-flumes-base-place,
     Decisions 4 and 5; rail-cards "A landings row is due one land for each send and head"), from plain facts (code.7):
     rows, the card's rows in its order (landing_rows' and each fix of main's), each {bolt, box, facts: {head}}, a fix of
@@ -1854,13 +1854,16 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None):
     The rows due a land on proof come as a send of their own, keyed by no card, {work: (None, its head now)}
     (a-proven-bolt-lands-on-proof, Decision 1), so the same rules hold of them: one land for each head, none while one
     stands undecided or unknown, none after a stop at that head, the land posted there; a stop at an old head holds
-    nothing at a new one, a stopped land on proof holding its row only at the head it was posted at."""
-    work, due = work or {}, []
+    nothing at a new one, a stopped land on proof holding its row only at the head it was posted at.
+    No land is due, on a send or on proof, for a bolt or fix of main the runner reports landed or dropped, whether or not
+    it is still a row, nor for a bolt in on_main, the bolts crew reads landed on their kit's main (plan.21), which the
+    first act that reads them closes (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7)."""
+    work, due, on_main = work or {}, [], set(on_main)
     posted = list(posted)
     waited = {str(p.get("request")) for p in posted if p.get("waited")}
     for r in sorted(rows, key=lambda r: not (r.get("work") or "").startswith("fix/main/")):
         w = r.get("work") or f"bolt/{r['bolt']}"
-        if not r.get("box") or w not in sent:
+        if not r.get("box") or w not in sent or (w == f"bolt/{r.get('bolt')}" and r.get("bolt") in on_main):
             continue
         card, at = sent[w]
         head = (r.get("facts") or {}).get("head") or ""

@@ -2514,11 +2514,29 @@ class TestLandsDue:
         out = ([dict(bolt="main--red", work=self.FIX, box=True, facts=dict(head=H2))] if fix else []) + [box(b) for b in bolts]
         return out
 
-    def due(self, rows, sent, requests=None, reads=None, posted=(), work=None):
+    def due(self, rows, sent, requests=None, reads=None, posted=(), work=None, on_main=()):
         import runner
         requests = requests if requests is not None else self.requests()
         # none of the fixtures has submitted anything: a base place live with no land reads none (runner.landing_of)
-        return runner.lands_due(rows, sent, requests, reads or self.reads(), posted, work)
+        return runner.lands_due(rows, sent, requests, reads or self.reads(), posted, work, on_main)
+
+    def test_no_land_for_work_the_runner_reports_landed_or_dropped(self):
+        """y's base place over and landed as flume 0.3.6 reports it, y still a row, and the fix of main over and dropped:
+        each row ticked, on a send or on proof, and none is due."""
+        reads = self.reads(launched={1: "landed", 4: "dropped"})
+        for card in ("req_1", None):
+            sent = {"bolt/y": (card, H1[:7]), self.FIX: (card, H2[:7])}
+            assert self.due(self.rows("y", fix=True), sent, reads=reads) == []
+        assert self.due(self.rows("y", fix=True), {"bolt/y": ("req_1", H1[:7]), self.FIX: ("req_1", H2[:7])}) == [
+            (self.FIX, 4), ("bolt/y", 1)]  # the same rows, live, are due
+
+    def test_no_land_for_a_bolt_read_landed_on_its_kits_main(self):
+        """y read landed on its kit's main, its base place live with no land: no land of it is due on a send or on proof,
+        and z beside it stays due."""
+        for card in ("req_1", None):
+            sent = {"bolt/y": (card, H1[:7]), "bolt/z": (card, H1[:7])}
+            assert self.due(self.rows("y", "z"), sent, on_main={"y"}) == [("bolt/z", 2)]
+            assert self.due(self.rows("y", "z"), sent) == [("bolt/y", 1), ("bolt/z", 2)]
 
     def test_two_rows_in_the_cards_order(self):
         assert self.due(self.rows("z", "y"), {"bolt/y": ("req_1", H1[:7]), "bolt/z": ("req_1", H1[:7])}) == [("bolt/z", 2), ("bolt/y", 1)]
