@@ -1008,12 +1008,26 @@ def brief(u):
     return (u.get("Intent") or "") + (" Sources: " + "; ".join(sources) + "." if sources else "")
 
 
-def priority_of(plan, bolt):
-    """A crossed bolt's priority (Decision 6): its place among the plan's bolts given through Flume (Path: flume),
-    counted from the end, so the first in the plan's order has the highest and Flume starts its waiting stages first
-    (flume record 0010); None for a bolt not given through Flume, or gone from the plan."""
-    given = [b.name() for b in plan.bolts() if b.get("Path") == "flume"]
-    return len(given) - given.index(bolt) if bolt in given else None
+def priority_of(requests, bolt):
+    """A started bolt's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 1): the Priority of the newest
+    request, by its number, among the launches of the bolt's work, its own (bolt/<bolt>) and every launch whose Base is
+    bolt/<bolt>, and the priority requests of those launches; so a bolt started before bolts were base places, with no
+    launch of its own, reads its pieces'. An int, or None where none is set. Nothing else stores it: requests.rec holds
+    each number crew set, and the plan only intent and marks (state.2)."""
+    base = f"bolt/{bolt}"
+    mine = {r.get("Request") for r in requests if r.get("Act") == "launch" and base in (r.get("Work"), r.get("Base"))}
+    newest = None
+    for r in requests:
+        if (r.get("Request") in mine or (r.get("Act") == "priority" and r.get("Of") in mine)) and r.get("Priority") is not None:
+            n, p = number(r.get("Request")), whole(r.get("Priority"))
+            if p is not None and n is not None and (newest is None or n > newest[0]):
+                newest = (n, p)
+    return newest[1] if newest else None
+
+
+def whole(v):
+    """A Priority's whole number, its sign kept, None where it holds none."""
+    return int(v) if isinstance(v, str) and re.fullmatch(r"-?[0-9]+", v) else v if isinstance(v, int) else None
 
 
 def standing(requests):
@@ -1119,7 +1133,7 @@ def reach(plan, requests, bolt, label, again=()):
         num[u.name()], n = n, n + 1
         out.append(("launch", wk, {
             "Repo": plan.bolt(bolt).get("Repo"), "Kind": "chore" if u.get("Kind") == "chore" else "change", "Name": u.name(),
-            "Base": base, "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
+            "Base": base, "Priority": priority_of(requests, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
             "After": [num[d] for d in u.all("After") if d in num], "Brief": brief(u)}))
     return out
 
@@ -1284,7 +1298,7 @@ def fix_launch(plan, requests, bolt, label, name, words):
                       f"{l.get('Request')}), so name this fix differently")
     return ("launch", work, {
         "Repo": plan.bolt(bolt).get("Repo"), "Kind": "fix", "Name": f"{bolt}--{name}", "Base": base,
-        "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner", "Brief": words}), None
+        "Priority": priority_of(requests, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner", "Brief": words}), None
 
 
 def take_main_name(main, request=None):

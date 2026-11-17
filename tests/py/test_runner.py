@@ -1448,10 +1448,17 @@ class TestPriorities:
         plan.request(w, act, work, **given)
         plan.reach_places(self.FLEET, w, bolt)
 
-    def test_the_first_bolt_in_the_plan_has_the_highest(self):
-        """x and y are started, t between them and z after them planned: a planned bolt has no priority."""
-        p = plan.Plan(flume_plan([("x", None, "flume"), ("t", None, None), ("y", None, "flume"), ("z", None, None)]))
-        assert [runner.priority_of(p, b) for b in ("x", "t", "y", "z", "gone")] == [2, None, 1, None, None]
+    def test_a_bolts_priority_is_the_newest_its_requests_set(self):
+        """x's base place launched at 7 and its unit a at 7, then a re-set to 9: x reads 9. y, started before bolts were
+        base places, has no launch of its own and reads its pieces' newest, 5, x's later request counting for nothing.
+        z, with no requests, reads None."""
+        rs = held(rec(1, "launch", "bolt/x", **dict(BOLT, Name="x", Priority=7)), rec(2, "launch", "unit/a", Base="bolt/x", Priority=7),
+                  rec(3, "launch", "unit/b", Base="bolt/y", Priority=3), rec(4, "launch", "unit/c", Base="bolt/y", Priority=3),
+                  rec(5, "priority", "unit/a", Of=2, Priority=9), rec(6, "priority", "unit/c", Of=4, Priority=5),
+                  rec(7, "priority", "bolt/x", Of=1, Priority=9))
+        assert [runner.priority_of(rs, b) for b in ("x", "y", "z")] == [9, 5, None]
+        assert runner.priority_of(rs[:5], "x") == 9 and runner.priority_of(rs[:4], "x") == 7
+        assert runner.priority_of([], "x") is None
 
     def test_two_bolts_started_in_order(self, monkeypatch):
         """x is started and then y, x above y in the plan: x's pieces' launches carry a higher priority than y's, each
