@@ -43,7 +43,7 @@ def requests(w):
     return out
 
 
-def launch(n, work, name, after=(), kind="change", bolt="x", priority="1", brief=None):
+def launch(n, work, name, after=(), kind="change", bolt="x", priority=str(runner.FIRST), brief=None):
     """A launch request as a start writes it, in crew's repository as the plan names it and naming no host or stream,
     for a runner whose configuration names it to take (the user's ruling of 2026-11-01)."""
     d = {"Request": str(n), "Act": "launch", "Work": work, "Repo": CREW, "Kind": kind, "Name": name,
@@ -64,9 +64,9 @@ def start(w, bolt):
     """What a start's change function does for the bolt's pieces (plan.op_bolt_start; runner.bolt_launch, test_runner.py's
     TestBoltLaunch), its base place's launch left out: Path: flume set, no Team, and the bolt's work launched in its
     repository at the number the start gives it (runner.numbering; plan.reach_places)."""
+    from facts import numbered
     w.plan.bolt(bolt).set("Path", "flume")
-    have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
-    return plan.reach_places(FLEET, w, bolt, priority=runner.numbering(w.plan, have, bolt).get(bolt))
+    return plan.reach_places(FLEET, w, bolt, priority=numbered(w, bolt))
 
 
 class TestStart:
@@ -202,7 +202,7 @@ class TestReach:
         commit drops a's launch and then bolt/x's, a queued with no bolt, so it is launched afresh once a bolt it is
         placed in is started."""
         w = launched("x", work=[unit("a")])
-        act, work, given = runner.bolt_launch(w.plan, "x", "madswan")
+        act, work, given = runner.bolt_launch(w.plan, "x", "madswan", runner.FIRST)
         plan.request(w, act, work, **given)
         ops(w, 'bolt drop x "Later." --requeue')
         assert [(r["Act"], r["Work"], r.get("Of")) for r in requests(w)] == [

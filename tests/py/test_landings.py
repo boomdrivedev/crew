@@ -340,7 +340,7 @@ class TestCrossedTakesMain:
         """x, started, its unit a launched as a start launches it."""
         from facts import FactsWrite, flume_plan, madswan_fleet
         w = FactsWrite(flume_plan([("x", None, "flume")], [("a", "x", [], "unit", [])]), label="madswan")
-        plan.reach_places(madswan_fleet(), w, "x")
+        plan.reach_places(madswan_fleet(), w, "x", priority=1000000000000)
         return w, "madswan"
 
     def test_a_landing_refused_for_a_conflict_launches_one_take_main_fix_with_sluices_words(self):

@@ -95,7 +95,7 @@ class TestCrossed:
         w = FactsWrite(flume_plan([("x", None, None)], [("a", "x", [], "unit", ["README.md"]), ("b", "x", ["a"], "unit", [])]),
                        runners=runners, label="madswan")
         w.plan.bolt("x").set("Path", "flume")
-        plan.reach_places(self.FLEET, w, "x")
+        plan.reach_places(self.FLEET, w, "x", priority=1000000000000)
         if proposals:
             w.files["proposals.rec"] = proposals
         apply(w, 'unit amend a "Build a another way."', ctx=known(w, n=n, fleet=self.FLEET))

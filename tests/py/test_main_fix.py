@@ -33,7 +33,7 @@ class TestLaunch:
         assert plan.main_fix_change(madswan_fleet(), w, "crew", "a-test-reads-its-fixture", "start", WORDS) == dict(n=1, host=None)
         assert requests(w) == [{
             "Request": "1", "Act": "launch", "Work": "fix/main/crew/a-test-reads-its-fixture", "Repo": "crew",
-            "Kind": "fix", "Name": "main--a-test-reads-its-fixture", "Base": "main", "Priority": "1",
+            "Kind": "fix", "Name": "main--a-test-reads-its-fixture", "Base": "main", "Priority": "2000000000000",
             "Intent": "madswan/main/crew", "Recipient": "madswan/ops", "Hold": "submission", "Brief": WORDS}]
         assert w.subject == "plan(main): fix a-test-reads-its-fixture of crew"
 

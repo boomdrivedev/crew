@@ -72,15 +72,16 @@ def runs(p=None, at=None, before=None, numbered=None, read=True):
     ({unit: fixture}), zone-one landed on its bolt, so merged, unless given otherwise, and any other unanswered, and
     each request of before's at the fixture numbered names for it ({its number: fixture}); no runner read with read
     false."""
-    from facts import FactsWrite, ran
+    from facts import FactsWrite, numbered, ran
     import runner
     w = FactsWrite((p or the_plan()).text(), files={"requests.rec": before} if before else None, label="wldn")
     for b in w.plan.bolts():
         if plan.started(b):
-            plan.reach_places(FLEET, w, b.name())
+            plan.reach_places(FLEET, w, b.name(), priority=numbered(w, b.name()))
     for b in w.plan.bolts():  # each started bolt's base place, after the pieces so their numbers stand, unanswered
         if plan.started(b):
-            act, work, given = runner.bolt_launch(w.plan, b.name(), "wldn")
+            have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
+            act, work, given = runner.bolt_launch(w.plan, b.name(), "wldn", runner.priority_of(have, b.name()))
             plan.request(w, act, work, **given)
     requests = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
     n = {r.get("Work").split("/", 1)[1]: r.get("Request") for r in requests if r.get("Act") == "launch"}

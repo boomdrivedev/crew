@@ -324,10 +324,20 @@ def ran(launched=None, held=(), host="deneb", label="madswan", repository="/crew
     return {host: runner.host_read(label, host, "5e1f0c2a" + "0" * 32, files, {})}
 
 
+def numbered(w, bolt):
+    """The priority a start gives bolt over the write's requests (runner.numbering), None where the bolt keeps the one its
+    requests set: what a case that launches a started bolt's pieces with its base place left out, or after them, gives
+    plan.reach_places, so they carry the bolt's priority as a start's launches do."""
+    import plan
+    import runner
+    have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
+    return runner.numbering(w.plan, have, bolt).get(bolt)
+
+
 def launched(bolts, work=(), fleet=None, planned=(), base=True):
     """madswan's plan (flume_plan) with each bolt in bolts started and its work launched as a start launches it
-    (plan.reach_places), then, with base, each bolt's base place (runner.bolt_launch), after its pieces so their
-    numbers are those a case names, unanswered, a bolt of this crew's and not one started before bolts were base
+    (plan.reach_places) at the number a start gives it (numbered), then, with base, each bolt's base place
+    (runner.bolt_launch) at the same, after its pieces so their numbers are those a case names, unanswered, a bolt of this crew's and not one started before bolts were base
     places; and each bolt in planned planned and not started: (the plan, requests.rec's records as the writes leave
     them). The requests name their writer: set CREW_AGENT first."""
     import plan
@@ -336,8 +346,9 @@ def launched(bolts, work=(), fleet=None, planned=(), base=True):
     w = FactsWrite(flume_plan([(b, None, None) for b in [*bolts, *planned]], work), label="madswan")
     for b in bolts:
         w.plan.bolt(b).set("Path", "flume")
-        plan.reach_places(fleet, w, b)
+        plan.reach_places(fleet, w, b, priority=numbered(w, b))
     for b in bolts if base else ():  # each bolt's base place, after its pieces so their numbers stand, unanswered
-        act, work_, given = runner.bolt_launch(w.plan, b, "madswan")
+        have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
+        act, work_, given = runner.bolt_launch(w.plan, b, "madswan", runner.priority_of(have, b))
         plan.request(w, act, work_, **given)
     return w.plan, plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
