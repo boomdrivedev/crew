@@ -3,7 +3,7 @@ the stages it reads given, and every refusal it makes there, work a bolt in flig
 A write to a started bolt launches its work as test_cross.py's cases show. Rebasing a moved unit's branch, removing a dropped unit's place and the commits the writes make are the journey's
 (t-journey-fix and t-journey-land)."""
 import pytest
-from facts import FactsWrite, apply, known, plan_text, units_of
+from facts import FactsWrite, apply, based, known, plan_text, units_of
 
 import plan
 
@@ -20,9 +20,10 @@ def writer(monkeypatch):
 
 
 def fresh(units=None, bolts=BOLTS):
-    """wldn's plan, tenant-environments and console-pages started and apex-zones planned unless bolts says otherwise."""
-    return FactsWrite(plan_text(bolts=bolts, units=units if units is not None else [
-        ("a", KIT, TE, []), ("b", KIT, TE, ["a"]), ("c", KIT, TE, []), ("elsewhere", KIT, "console-pages", []), ("later", KIT, None, [])]))
+    """wldn's plan, tenant-environments and console-pages started, each with its base place launched as its start leaves
+    it (based), and apex-zones planned, unless bolts says otherwise."""
+    return based(FactsWrite(plan_text(bolts=bolts, units=units if units is not None else [
+        ("a", KIT, TE, []), ("b", KIT, TE, ["a"]), ("c", KIT, TE, []), ("elsewhere", KIT, "console-pages", []), ("later", KIT, None, [])])))
 
 
 def run(w, *dos, stages=None, taken=()):

@@ -335,9 +335,9 @@ class TestTheBoltsOwnRow:
         w = FactsWrite(flume_plan([("x", None, None)], [("a", "x", [], "unit", [])]), label="madswan")
         w.plan.bolt("x").set("Path", "flume")
         if base:
-            act, work, given = runner.bolt_launch(w.plan, "x", "madswan")
+            act, work, given = runner.bolt_launch(w.plan, "x", "madswan", runner.FIRST)
             plan.request(w, act, work, **given)
-        plan.reach_places(self.FLEET, w, "x")
+        plan.reach_places(self.FLEET, w, "x", priority=runner.FIRST)
         requests = plan.Plan(w.files["requests.rec"]).recs("Request")
         st = plan.Stages(self.FLEET, w.plan, crew_read(bolts={"x": {}}), runs={"madswan": (requests, runners)}, label="madswan")
         return st, st.base(w.plan.bolt("x"))

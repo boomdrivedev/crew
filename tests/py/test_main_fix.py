@@ -33,16 +33,15 @@ class TestLaunch:
         assert plan.main_fix_change(madswan_fleet(), w, "crew", "a-test-reads-its-fixture", "start", WORDS) == dict(n=1, host=None)
         assert requests(w) == [{
             "Request": "1", "Act": "launch", "Work": "fix/main/crew/a-test-reads-its-fixture", "Repo": "crew",
-            "Kind": "fix", "Name": "main--a-test-reads-its-fixture", "Base": "main", "Priority": "1",
+            "Kind": "fix", "Name": "main--a-test-reads-its-fixture", "Base": "main", "Priority": "2000000000000",
             "Intent": "madswan/main/crew", "Recipient": "madswan/ops", "Hold": "submission", "Brief": WORDS}]
         assert w.subject == "plan(main): fix a-test-reads-its-fixture of crew"
 
     def test_its_priority_is_above_every_started_bolt(self):
-        """x and y are started and z planned: the fix goes above x and y, and z counts for nothing."""
+        """x and y are started and z planned: the fix carries MAIN_PRIORITY, above any number a started bolt takes."""
         w = write([("x", None, "flume"), ("y", None, "flume"), ("z", None, None)])
         plan.main_fix_change(madswan_fleet(), w, "crew", "red", "start", WORDS)
-        assert requests(w)[0]["Priority"] == "3"
-        assert runner.priority_of(w.plan, "x") == 2
+        assert requests(w)[0]["Priority"] == "2000000000000" == str(runner.MAIN_PRIORITY)
 
     def test_a_name_in_use_on_the_kits_main_is_refused(self):
         w = write()
