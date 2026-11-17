@@ -17,7 +17,7 @@ Work the tasks in order, from the place's root. Before the first logic check, sy
 ## 3. One answer settles it
 
 - [x] 3.1 `crew ops settle <key> --state done|declined` records the state on every step the card named, each under its own environment, deploy and key with its `When` kept. It closes the card once and raises each host's next step card and each deploy the step released. It is refused for a key no row or card holds, and answers `-h` (design, Decision 6; Task notes 3.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestSettle tests/py/test_help.py::TestAsked::test_the_other_modules_parsers`.
-- [ ] 3.2 An open, unanswered step card is changed in place as a host's step joins or leaves its group, and closed when it names none (design, Decision 7; Task notes 3.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestStepRecordedAgain`.
+- [x] 3.2 An open, unanswered step card is changed in place as a host's step joins or leaves its group, and closed when it names none (design, Decision 7; Task notes 3.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestStepRecordedAgain`.
 - [ ] 3.3 The rail's read changes a step card whose `Heads` differ from its row's, and closes a folded card saying which card asks it now (design, Decision 7; Task notes 3.3). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_rail.py::TestStepCardsFold`.
 
 ## 4. A deploy card holds no boxes

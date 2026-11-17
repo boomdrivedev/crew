@@ -846,8 +846,10 @@ class TestStepRecordedAgain:
         return card(act, key, card_id, minutes, By="swancloud-ops", **f)
 
     def again(self, *written, es=None):
-        """step_again on this host's record as written, its ops entries the drive's unless es gives them."""
-        return ops.step_again([x for x in written if x["Act"].startswith("ops.")] if es is None else es, list(written), self.K, "swancloud")
+        """step_again on this host's record as written, its ops entries the drive's unless es gives them, as (its card's
+        key, its id, the change note, whether its kind changed)."""
+        got = ops.step_again([x for x in written if x["Act"].startswith("ops.")] if es is None else es, list(written), self.K, "swancloud")
+        return got and (got["key"], got["card"], got["note"], got["kind_changed"])
 
     def test_a_step_recorded_again_with_new_words_changes_its_open_card_in_place_naming_what_changed(self):
         assert self.again(self.step(1, self.WAS), self.posted(), self.posted(), self.step(5, self.NOW)) == (
@@ -876,6 +878,75 @@ class TestStepRecordedAgain:
     def test_a_card_whose_steps_entry_this_hosts_record_no_longer_reaches_is_changed_to_the_step_as_recorded(self):
         assert self.again(self.posted(), self.step(5, self.NOW), es=[self.step(1, self.WAS), self.step(5, self.NOW)]) == (
             self.KEY, "req_2a16", "Recorded again", False)
+
+    # rail-cards "A step's card changes as environments come to it or leave it" (Decision 7): step_again over a shared
+    # card, and crew ops step's acts once it is recorded.
+    SHARED = "op/mac-studio/7"
+
+    def shared(self):
+        return [card("card.post", self.SHARED, "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS)]
+
+    def moved(self, es, k, cards_=None):
+        return ops.step_again(es, self.shared() if cards_ is None else cards_, k, "afterthought")
+
+    def test_a_fifth_host_recording_the_step_while_the_card_waits_changes_it_in_place(self):
+        es = CUTOVER + [disk(SRV, 9)]
+        got = self.moved(es, (SRV, S1, DISK))
+        assert (got["key"], got["card"], got["note"], got["close"], got["left"]) == (self.SHARED, "req_7", f"{SRV} waits on it too", None, False)
+        g, _ = ops.step_point(es, self.shared(), self.SHARED)
+        assert [ops.head_word(k) for _, k, _ in g["steps"]] == CUTOVER_HEADS.split() + [f"{SRV}@{S1}"]
+
+    def test_one_hosts_step_recorded_done_changes_it_to_name_the_rest(self):
+        es = CUTOVER + [e("ops.step", env="deneb", minutes=9, Head=S1, Key=DISK, State="done", Doer="user")]
+        got = self.moved(es, ("deneb", S1, DISK))
+        assert (got["note"], got["close"], got["left"]) == ("deneb's is recorded done", None, True)
+        g, _ = ops.step_point(es, self.shared(), self.SHARED)
+        assert [k[0] for _, k, _ in g["steps"]] == ["mac-studio", "macbook-pro", CHA]
+
+    def test_a_card_left_naming_no_step_is_closed_with_that_steps_state_and_an_answered_one_is_left(self):
+        one = [card("card.post", f"op/{SRV}/1", "req_s", 6, By="afterthought-ops", Heads=f"{SRV}@{S1}")]
+        for state, said in (("done", "Done."), ("declined", "Skipped."), ("failed", "Recorded failed.")):
+            es = [disk(SRV, 1), e("ops.step", env=SRV, minutes=2, Head=S1, Key=DISK, State=state, Doer="user")]
+            assert self.moved(es, (SRV, S1, DISK), one)["close"] == said
+        answered = self.shared() + [card("card.answer", self.SHARED, "req_7", 7, By="afterthought-ops")]
+        got = self.moved(CUTOVER + [disk(SRV, 9)], (SRV, S1, DISK), answered)
+        assert (got["answered"], got["note"], got["close"]) == (True, None, None)
+
+    @pytest.fixture
+    def acts(self, monkeypatch):
+        import plan
+        got = {"es": list(CUTOVER), "cards": self.shared(), "raised": [], "closed": [], "heard": []}
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: got["es"])
+
+        class Acts:
+            def __init__(self, fleet):
+                pass
+
+            def entries(self, label):
+                return got["cards"]
+        monkeypatch.setattr(plan, "CardActs", Acts)
+        monkeypatch.setattr(plan, "card_heard", lambda acts, key, card_, owner: got["heard"].append(key))
+        monkeypatch.setattr(plan, "row_card_close", lambda fleet, label, owner, key, outcome=None, reason=None, acts=None, **k:
+                            got["closed"].append((key, outcome)))
+        monkeypatch.setattr(ops, "raise_step", lambda fleet, row, acts=None, note="Raised again", kind_changed=False:
+                            got["raised"].append((row["key"], note)) or "req_new")
+        return got
+
+    def test_crew_ops_step_changes_the_card_and_raises_the_next_due_on_a_host_it_left(self, acts):
+        acts["es"] += [disk("deneb", 9, key="rotate-kanidm", Text="Rotate the kanidm admin password."),
+                       e("ops.step", env="deneb", minutes=10, Head=S1, Key=DISK, State="done", Doer="user")]
+        ops.raise_next_step(FLEET, "afterthought", "deneb", ("deneb", S1, DISK))
+        assert acts["raised"] == [(self.SHARED, "deneb's is recorded done")]
+        acts["cards"].append(card("card.update", self.SHARED, "req_7", 11, By="afterthought-ops", Heads=CUTOVER_HEADS.replace(f"deneb@{S1} ", "")))
+        acts["raised"].clear()
+        ops.raise_next_step(FLEET, "afterthought", "deneb", ("deneb", S1, DISK))
+        assert acts["raised"] == [("op/deneb/43", "Raised again")]
+
+    def test_crew_ops_step_closes_a_card_left_naming_no_step(self, acts):
+        acts["es"] += [e("ops.step", env=x, minutes=10, Head=S2 if x == CHA else S1, Key=DISK, State="declined", Doer="user")
+                       for x in ("mac-studio", "macbook-pro", "deneb", CHA)]
+        ops.raise_next_step(FLEET, "afterthought", CHA, (CHA, S2, DISK))
+        assert acts["closed"] == [(self.SHARED, "Skipped.")]
 
 
 class TestRaisedAgain:
