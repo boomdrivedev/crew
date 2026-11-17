@@ -95,10 +95,12 @@ class TestRows:
         rows = ops.rows(None, "swancloud", steps)
         assert [r["key"] for r in rows] == ["op/mac-studio/2", "op/mac-studio/3"]
         assert rows[0]["what"] == [f"an operation after the deploy of mac-studio to aaaaaaa (swancloud), yours to do: Restart the herdr server\nonce the teams are quiet."]
-        assert rows[0]["cmds"][0] == ("done", f"crew ops step mac-studio --to {S1} --key restart-herdr/1 --state done --label swancloud")
+        assert rows[0]["cmds"][0] == ("done", "crew ops settle op/mac-studio/2 --state done --label swancloud")
+        assert rows[0]["heads"] == [f"mac-studio@{S1}"]
         assert rows[1]["what"] == ["an operation on mac-studio (swancloud), yours to do: rotate-tailnet-key"]
-        assert rows[1]["cmds"] == [("done", "crew ops step mac-studio --key rotate-tailnet-key --state done --label swancloud"),
-                                   ("decline", "crew ops step mac-studio --key rotate-tailnet-key --state declined --label swancloud")]
+        assert rows[1]["cmds"] == [("done", "crew ops settle op/mac-studio/3 --state done --label swancloud"),
+                                   ("decline", "crew ops settle op/mac-studio/3 --state declined --label swancloud")]
+        assert rows[1]["heads"] == ["mac-studio"]
         assert ops.rows(None, "swancloud", steps + [e("ops.step", minutes=4, Key="rotate-tailnet-key", State="declined", Doer="user")])[1:] == []
 
     def test_a_gates_step_is_a_row_saying_the_deploy_waits_at_its_gate_for_the_user_with_its_link(self):
@@ -1192,3 +1194,78 @@ class TestAStepRecordedThatTheOfferWaitsOn:
         stepped["es"].append(waiting(2))
         self.run("--state", "done")
         assert stepped["raised"] == [(f"deploy/{SRV}", "A step it waits on is recorded done")]
+
+
+# ------------------------------------------- one step of the user's, however many hosts wait on it (record 0070)
+CHA = "chuck-herdr-alpha"
+DISK_WHY = "The job points at deneb, which holds no repository until the disk is there."
+DISK_TEXT = f"{MOVE}\n- why: {DISK_WHY}"
+CUTOVER_OFFER = e("ops.offer", env=CHA, minutes=1, Head=S2, Base=S1)
+
+
+def done_before(env, k):
+    """k steps of env's, each done, so the next step env records is its k+1th."""
+    return [e("ops.step", env=env, Key=f"old-{env}-{i}", State="done", Doer="user") for i in range(k)]
+
+
+def disk(env, minutes, key=DISK, **f):
+    """The deployer's record of the Archives disk's step on env, as swancloud's record_waited makes it."""
+    return e("ops.step", env=env, minutes=minutes, Head=S2 if env == CHA else S1, Key=key, State="waiting",
+             **dict(dict(Doer="user", Text=DISK_TEXT), **f))
+
+
+# Before swancloud's Willdan cutover: one step of the user's on four hosts, chuck-herdr-alpha's under its open offer.
+CUTOVER = (done_before("mac-studio", 6) + done_before("macbook-pro", 7) + done_before("deneb", 41)
+           + [CUTOVER_OFFER, disk("mac-studio", 2), disk("macbook-pro", 3), disk("deneb", 4), disk(CHA, 5, When="before")])
+CUTOVER_HEADS = f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1} {CHA}@{S2}"
+
+
+def heads_of(g):
+    return [(n, k[0]) for n, k, _ in g["steps"]]
+
+
+class TestOneStepManyHosts:
+    def test_the_cutovers_step_on_four_hosts_is_one_group_in_first_recorded_order(self):
+        g, = ops.groups(CUTOVER)
+        assert (g["key"], g["shared"]) == (DISK, True)
+        assert heads_of(g) == [(7, "mac-studio"), (8, "macbook-pro"), (42, "deneb"), (1, CHA)]
+
+    def test_a_held_step_on_two_hosts_is_two_groups_and_a_gate_is_one_of_its_own(self):
+        held = [e("ops.step", env=x, minutes=i, Key="restart-teams", State="waiting", Doer="main-ops", When="held",
+                  Text="Restart crew's teams.") for i, x in enumerate(("mac-studio", "deneb"))]
+        assert [(g["shared"], heads_of(g)) for g in ops.groups(held)] == [(False, [(1, "mac-studio")]), (False, [(1, "deneb")])]
+        assert [(g["shared"], heads_of(g)) for g in ops.groups([gate()])] == [(False, [(1, "dev")])]
+
+    def test_a_step_done_on_one_host_leaves_its_group_and_two_keys_are_two_groups(self):
+        g, = ops.groups(CUTOVER + [e("ops.step", env="deneb", minutes=6, Head=S1, Key=DISK, State="done", Doer="user")])
+        assert [x for _, x in heads_of(g)] == ["mac-studio", "macbook-pro", CHA]
+        two = CUTOVER + [disk("deneb", 7, key="rotate-kanidm")]
+        assert [(g["key"], [x for _, x in heads_of(g)]) for g in ops.groups(two)] == [
+            (DISK, ["mac-studio", "macbook-pro", "deneb", CHA]), ("rotate-kanidm", ["deneb"])]
+
+    def test_the_group_has_one_row_keyed_by_its_first_recorded_step_answered_by_settle(self):
+        rows = ops.rows(None, "afterthought", CUTOVER)
+        assert [r["key"] for r in rows] == [f"deploy/{CHA}", "op/mac-studio/7"]
+        row = rows[1]
+        assert row["cmds"] == [("done", "crew ops settle op/mac-studio/7 --state done --label afterthought"),
+                               ("decline", "crew ops settle op/mac-studio/7 --state declined --label afterthought")]
+        assert row["heads"] == CUTOVER_HEADS.split() and row["step"] == DISK
+        assert row["what"] == [f"an operation on mac-studio, macbook-pro, deneb and {CHA} (afterthought), yours to do, one answer "
+                               f"settling it on each: {DISK_TEXT}"]
+
+    def test_the_key_stays_with_the_open_card_once_the_first_hosts_step_is_done_on_its_own(self):
+        posted = [card("card.post", "op/mac-studio/7", "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS)]
+        done = CUTOVER + [e("ops.step", env="mac-studio", minutes=7, Head=S1, Key=DISK, State="done", Doer="user")]
+        assert [r["key"] for r in ops.rows(None, "afterthought", done, posted)][1:] == ["op/mac-studio/7"]
+        assert [r["key"] for r in ops.rows(None, "afterthought", done)][1:] == ["op/macbook-pro/8"]
+        assert ops.card_steps(done, posted, "op/mac-studio/7", "req_7") == {
+            ("mac-studio", S1, DISK), ("macbook-pro", S1, DISK), ("deneb", S1, DISK), (CHA, S2, DISK)}
+
+    def test_a_card_from_before_recording_no_heads_names_its_keys_environment_alone(self):
+        old = [card("card.post", "op/deneb/42", "req_42", 6, By="afterthought-ops")]
+        assert ops.card_steps(CUTOVER, old, "op/deneb/42", "req_42") == {("deneb", S1, DISK)}
+        g, = ops.groups(CUTOVER)
+        assert ops.group_key(g, ops.step_cards(CUTOVER, old)) == "op/deneb/42"
+        three = old + [card("card.post", "op/macbook-pro/8", "req_8", 7, By="afterthought-ops"),
+                       card("card.post", "op/mac-studio/7", "req_7", 8, By="afterthought-ops")]
+        assert ops.group_key(g, ops.step_cards(CUTOVER, three)) == "op/mac-studio/7"

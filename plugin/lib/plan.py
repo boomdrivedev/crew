@@ -10596,8 +10596,11 @@ def rail_record(fleet, found, props, crossed=None):
         landings += r["landings"]
         held[l] = r["held"]
         import ops  # ops.py imports nothing of this module
-        mine = [e for e in entries if (e.get("Act") or "").startswith("ops.") and e.get("Host") == fleet["drives"][l]["machine"]]
-        deploys += [dict(r, at=utc(r["at"]), doc=None) for r in ops.rows(fleet, l, mine)]
+        machine = fleet["drives"][l]["machine"]
+        mine = [e for e in entries if (e.get("Act") or "").startswith("ops.") and e.get("Host") == machine]
+        carded = [e for e in entries if (e.get("Act") or "").startswith("card.") and e.get("Host") == machine]
+        handed = ops.offers_handed(l, mine) if machine == crew.this_host() else None  # an offer's files are kept there alone
+        deploys += [dict(r, at=utc(r["at"]), doc=None) for r in ops.rows(fleet, l, mine, carded, handed)]
         opses[l] = sorted(mine + [e for e in entries if e.get("Act") == "bolt.land"], key=lambda e: (e["At"], e["Id"]))
     return times, cards, unread, landings, held, deploys, opses, logs
 
@@ -13965,7 +13968,9 @@ def built_fields(b):
     """A built card's post or change entry's own fields: Unread, why its reading could not open (unopened), crew's own
     message (record.3), left out when it opened or the card links none; and Heads, a kit's landings card's rows as
     <bolt>@<head>, :main after one taking main first or :left after one the user cleared on their last send, then :next
-    after one with no box (cards.landings_card), which its next raise reads (landings_step); and Form, a deploy card's boxes (cards.deploy_form), which its next raise reads (cards.form_asked)."""
+    after one with no box (cards.landings_card), which its next raise reads (landings_step), or a step card's steps as
+    <env>@<to>, or <env> for one that names no deploy (cards.step_card), which crew ops settle, one step card at a time
+    and the rail's read read (ops.card_steps); and Form, a card's form where its builder hands one (cards.form_asked)."""
     return (({"Unread": b["unread"]} if b.get("unread") else {}) | ({"Heads": " ".join(b["heads"])} if b.get("heads") else {})
             | ({"Form": b["form"]} if b.get("form") else {}))
 
