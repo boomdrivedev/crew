@@ -23,3 +23,7 @@ bolt-conflict-dropped  the verdict conflict on entry 412, and y-1 naming it drop
                        merge queue's words
 bolt-fixed-landed      the verdict conflict on entry 412, and y-1 naming it landed at 5a6b7c8, the bolt's head now,
                        waiting on its caller unsubmitted
+bolt-forecast-fixed    bolt-forecast-fixing after y-1 landed at 5a6b7c8, the bolt's head now: on_branch empty, waiting
+                       on its caller unsubmitted
+bolt-place-on-branch   never submitted and with no fix, on_branch naming fix--y-notes, a place on bolt/y that no fix of
+                       Flume's made, the base place waiting on places

@@ -2292,6 +2292,28 @@ class TestALandingFromTheRunnersReport:
         assert board.head_said(self.ledger({"outcome": "landed", "commit": "c" * 40})) == "landed at ccccccc"
         assert board.record_landing(self.ledger(stopped, recorded)) == ""
 
+    def test_a_landing_that_waits_names_the_places_on_its_branch(self):
+        """crew-board "A landing that waits" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 5): the
+        runner answered y's land at aaaaaaa refused while Flume names fix--y-1 on bolt/y; its head line says its landing
+        at that head waits on fix--y-1 on its branch, each place by its folder, nothing of the bolt's, and that crew asks
+        the runner to land it once none is live, before the record holds the wait and after; ops's band names no landing
+        in flight once it does."""
+        place = "/Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1"
+        waiting = {"outcome": "waiting", "request": 57, "by": "runner", "words": "flume refused the retry (203)", "places": [place]}
+        want = ("landing at aaaaaaa waits on fix--y-1 on its branch, nothing of the bolt's: crew asks the runner to land it once "
+                "none is live")
+        assert board.head_said(self.ledger(waiting, self.ASKED)) == want == board.head_said(self.ledger(waiting, None))
+        assert board.record_landing(self.ledger(waiting, None)) == ""
+        two = dict(waiting, places=[place, place.replace("fix--y-1", "fix--y-notes")])
+        assert board.head_said(self.ledger(two, None)).startswith("landing at aaaaaaa waits on fix--y-1 and fix--y-notes on its branch")
+        import runner
+        from facts import ran
+        from test_runner import BOLT, held, rec
+        rs = held(rec(1, "launch", "bolt/y", **dict(BOLT, Name="y")), rec(2, "land", "bolt/y", Of=1))
+        l = runner.landing_of(rs[0], runner.lands_of(rs, rs[0]), ran({1: "flume-0.19.0/bolt-forecast-fixing"}, refused={2: "no (203)"}))
+        assert runner.landing_said(l) == ("landing waits on fix--y-1 on its branch, nothing of the bolt's: crew asks the runner to "
+                                          "land it once none is live; Flume's landing fix y-1 takes main in")
+
     def test_landing_again_says_nothing_of_the_refusal_while_asked_and_both_once_in_the_queue(self):
         """crew-board "Landing again": asked again as request 63, nothing of the refusal at its old head; bolt-teams
         "Landing again": once the runner carries it as #415 under test, that it lands again after #412 was refused, and

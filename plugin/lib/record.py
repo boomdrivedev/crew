@@ -96,7 +96,9 @@ DESCRIPTOR = """\
 # hold 0, nobody 20`, team-or-kit a submission's stay in sluice crew can't split between queued and under test,
 # plan.20), a landing's submission's Submission (the merge queue's entry for it, on its bolt.submit once the runner's
 # report names one, plan.21), a land's Request (the number of the land request crew posted on the user's send, on its
-# bolt.submit or fix.merge marked Outcome asked; crew-lands-each-bolt-through-flumes-base-place, Decision 4) and a land's
+# bolt.submit or fix.merge marked Outcome asked; crew-lands-each-bolt-through-flumes-base-place, Decision 4; and on the
+# bolt.submit marked Outcome waiting of a land refused while Flume named a place on its bolt's branch,
+# a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decision 3) and a land's
 # Form (proof, on the bolt.submit of a land crew posted on proof, which names no Card; a-proven-bolt-lands-on-proof,
 # Decision 1), a bolt.hold's Request (the number of the hold crew posted of a waiting bolt's base place), Head (the
 # bolt's head the rail's read found) and Form (what the bolt waits on the user for, send, hold or batch, or end for the
