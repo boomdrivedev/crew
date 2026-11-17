@@ -8892,7 +8892,7 @@ def main_fix_change(fleet, w, repo, name, mode, words):
         not why or fail(why)
         w.subject = f"plan(main): drop fix {name} of {kit}"
         return dict(n=request(w, "drop", work, Of=launch.get("Request")), host=w.taker(launch))
-    launched, why = runner.main_fix_launch(w.plan, requests, w.label, repo, name, words, bool(w.runners()))
+    launched, why = runner.main_fix_launch(requests, w.label, repo, name, words, bool(w.runners()))
     not why or fail(why)
     act, work, given = launched
     w.subject = f"plan(main): fix {name} of {kit}"

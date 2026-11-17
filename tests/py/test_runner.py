@@ -1560,6 +1560,19 @@ class TestPriorities:
         assert runner.priorities(rs, unread, {"x": 5}) == []
 
 
+    def test_a_fix_of_main_from_before_is_re_set_once(self):
+        """A fix of main launched at 3 before bolts kept theirs, its place live, is listed at MAIN_PRIORITY on the next
+        start or move, whatever bolts it renumbers, and not once a priority of it at MAIN_PRIORITY stands; one dropped,
+        or over, takes none."""
+        fix = dict(Base="main", Intent="madswan/main/crew", Recipient="madswan/ops", Name="main--red", Hold="submission")
+        rs = held(rec(1, "launch", "fix/main/crew/red", **dict(fix, Priority=3)))
+        reads = ran({1: "code"})
+        for numbers in ({}, {"x": 9}):
+            assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, numbers)] == [("1", 2000000000000)]
+        assert runner.priorities(held(*rs, rec(2, "priority", "fix/main/crew/red", Of=1, Priority=2000000000000)), reads, {}) == []
+        assert runner.priorities(held(*rs, rec(2, "drop", "fix/main/crew/red", Of=1)), reads, {}) == []
+        assert runner.priorities(rs, ran({1: "landed"}), {}) == []
+
 class TestBoltLaunch:
     """A start launches the bolt's base place, then its pieces (bolt-teams "A start launches the bolt's base place before
     its pieces", "A start run again launches a bolt whose launch the runner refused"; Decision 3): runner.bolt_launch's

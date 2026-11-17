@@ -1893,13 +1893,14 @@ def send_stood(sent, head, work):
 
 # ------------------------------------------------------------------------------------------------ a fix of main
 
-def main_priority(plan):
-    """A fix of main's priority at its launch (Decision 11): one above every bolt given through Flume (priority_of), so
-    Flume starts its code ahead of theirs, a red main holding back every landing on it."""
-    return sum(1 for b in plan.bolts() if b.get("Path") == "flume") + 1
+def main_priority():
+    """A fix of main's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 6): MAIN_PRIORITY, above every
+    number a started bolt takes (numbering), so Flume starts its code ahead of theirs for as long as it stands, a red
+    main holding back every landing on it."""
+    return MAIN_PRIORITY
 
 
-def main_fix_launch(plan, requests, label, repo, name, words, served):
+def main_fix_launch(requests, label, repo, name, words, served):
     """The launch crew main fix <kit> <name> "<the failure's words>" appends (Decision 11; Decision 15 of
     the-team-machinery-leaves), as (act, work, its fields as plan.request takes them), or (None, why): a place of the fix
     kind named main--<name>, cut from main, in the kit's repository (repo, as the drive's kits name it) for the
@@ -1920,7 +1921,7 @@ def main_fix_launch(plan, requests, label, repo, name, words, served):
         return None, (f"fix {name} of {kit}'s main is in use: it is launched as Flume place {l.get('Name')} (request "
                       f"{l.get('Request')}), so name this fix differently")
     return ("launch", work, {
-        "Repo": repo, "Kind": "fix", "Name": f"main--{name}", "Base": "main", "Priority": main_priority(plan),
+        "Repo": repo, "Kind": "fix", "Name": f"main--{name}", "Base": "main", "Priority": main_priority(),
         "Intent": f"{label}/main/{kit}", "Recipient": f"{label}/ops", "Hold": "submission", "Brief": words}), None
 
 
