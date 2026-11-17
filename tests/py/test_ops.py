@@ -1214,132 +1214,32 @@ class TestTheDeployCardOfAStepItWaitsOn:
         steps = handed_waits()
         return ops.deploy_facts(SRV, SRV_OFFER, es, (ops.first_parents(RANGE_LOG), MERGED, None), NOTES, steps, ops.waited_on(steps, es, SRV))
 
-    def test_the_steps_it_waits_on_come_first_before_the_notes_a_box_each_and_one_for_the_deploy_none_ticked(self):
-        f = self.facts([SRV_OFFER, waiting(2)])
+    def test_once_every_step_it_waits_on_is_done_its_card_is_the_hold_to_approve_listing_them_first_done(self):
+        """rail-cards "The step done": the hold-to-approve of risk high, its face listing the step done, with no box."""
+        f = self.facts([SRV_OFFER, waiting(2), e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done")])
         assert [s["n"] for s in f["steps"]] == ["2"]
         out = cards.deploy_card(f)
         c = out["card"]
-        assert c["summary"].startswith(
-            "It waits on 1 step of yours before the deploy: tick each once it is done, and the deploy; your send with every box "
-            "ticked is the word to deploy, and a box left unticked deploys nothing. 2 landings since")
-        assert [a["title"] for a in c["artifacts"]] == ["Before the deploy: 1 step, yours", "What's in it: swancloud-srv-v0.3.0",
+        assert c["summary"].startswith("It waited on 1 step of yours, each done. 2 landings since")
+        assert (c["kind"], c["intent"], c["approve"]["risk"], c["recommendedIds"]) == ("approve", "approve", "high", ["approve"])
+        assert "highStakes" not in c and "options" not in c and "multi" not in c and "form" not in out
+        assert [a["title"] for a in c["artifacts"]] == ["Before the deploy: 1 step, yours, done", "What's in it: swancloud-srv-v0.3.0",
                                                         "After the deploy: 1 step, 1 yours"]
-        assert c["artifacts"][0]["lines"][:2] == ["1 Move the Archives disk from", "  mac-studio to deneb."]
-        assert (c["kind"], c["intent"], c["highStakes"], c["recommendedIds"], c["multi"]) == ("multi", "decide", True, [], {"min": 0, "max": 2})
-        assert [(o["id"], o["label"]) for o in c["options"]] == [("before:1", f"Done: 1. {MOVE}"), ("deploy", "Deploy bbbbbbb to swancloud-srv")]
-        assert "approve" not in c and c["rationale"] == "swancloud-srv deploys only on your word, and a deploy is not undone."
-        assert out["form"] == "boxes" == cards.deploy_form(f) and out["head"] == S2
+        assert c["artifacts"][0]["lines"] == ["1 Move the Archives disk from", "  mac-studio to deneb.", "   done"]
+        assert out["head"] == S2 and c["rationale"] == "swancloud-srv deploys only on your word, and a deploy is not undone."
 
-    def test_once_every_step_it_waits_on_is_done_its_card_is_the_hold_to_approve_listing_them_done(self):
-        f = self.facts([SRV_OFFER, waiting(2), e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done")])
-        out = cards.deploy_card(f)
-        c = out["card"]
-        assert c["summary"].startswith("It waits on 1 step of yours before the deploy, each done. 2 landings since")
-        assert (c["kind"], c["approve"]["risk"], "highStakes" in c) == ("approve", "high", False)
-        assert c["artifacts"][0]["lines"][-1] == "   done" and out.get("form") is None and cards.deploy_form(f) is None
-        assert cards.deploy_card(dict(f, waited=[]))["card"]["summary"].startswith("2 landings since")
-
-    def waits_on(self, k, done=()):
+    def test_a_deploy_that_waited_on_no_step_says_none_and_its_builder_makes_no_boxes_whatever_its_steps(self):
         f = self.facts([SRV_OFFER])
-        f["waited"] = [dict(n=str(i), text=f"step {i}", why=None, to=None, key=None, state="done" if i in done else None)
-                       for i in range(1, k + 1)]
-        return f
+        assert cards.deploy_card(dict(f, waited=[]))["card"]["summary"].startswith("2 landings since")
+        assert cards.deploy_card(f)["card"]["kind"] == "approve" and not hasattr(cards, "deploy_boxes") and not hasattr(cards, "deploy_form")
 
-    def test_seven_steps_it_waits_on_are_one_list_of_five_boxes_the_fourth_holding_the_rest(self):
-        """rail-cards "Seven steps share four boxes": Pending You refuses a card of questions carrying highStakes, so the
-        card stays one list held to send, its fourth box holding steps 4 to 7."""
-        out = cards.deploy_card(self.waits_on(7))
-        c = out["card"]
-        assert (c["kind"], c["highStakes"], bool(c["rationale"])) == ("multi", True, True)
-        assert "questions" not in c and "about" not in c and c["multi"] == {"min": 0, "max": 5}
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:2", "before:3", "before:4-5-6-7", "deploy"]
-        fourth = c["options"][3]
-        assert fourth["label"] == "Done: steps 4, 5, 6 and 7" and fourth["detail"].startswith("4. step 4; 5. step 5")
-        assert fourth["consequence"] == "Ticked: you have done each of them, and each is recorded done with your word."
-        assert c["artifacts"][0]["title"] == "Before the deploy: 7 steps, yours"
-        assert [l for l in c["artifacts"][0]["lines"] if not l.startswith(" ")] == [f"{i}  step {i}" for i in range(1, 8)]
-        assert c["summary"].startswith(
-            "It waits on 7 steps of yours before the deploy: tick each box once its steps are done, steps 4, 5, 6 and 7 "
-            "sharing the fourth, and the deploy; your send with every box ticked is the word to deploy, and a box left "
-            "unticked deploys nothing.")
-        assert out["form"] == "boxes"
-
-    def test_four_steps_it_waits_on_have_a_box_each(self):
-        """rail-cards "Four steps the deploy waits on"."""
-        c = cards.deploy_card(self.waits_on(4))["card"]
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:2", "before:3", "before:4", "deploy"]
-        assert (c["kind"], c["highStakes"], "questions" in c) == ("multi", True, False)
-        assert c["summary"].startswith(
-            "It waits on 4 steps of yours before the deploy: tick each once it is done, and the deploy; your send with every "
-            "box ticked is the word to deploy, and a box left unticked deploys nothing.")
-
-    def test_a_step_done_among_six_leaves_the_fourth_box_holding_the_last_two(self):
-        """rail-cards "A step done among six"."""
-        c = cards.deploy_card(self.waits_on(6, done={2}))["card"]
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:3", "before:4", "before:5-6", "deploy"]
-        assert c["options"][3]["label"] == "Done: steps 5 and 6"
-        assert c["artifacts"][0]["lines"][1:3] == ["2  step 2", "   done"]
-        assert c["summary"].startswith("It waits on 6 steps of yours before the deploy, 1 done: tick each box once its steps "
-                                       "are done, steps 5 and 6 sharing the fourth, and the deploy;")
-
-    def test_the_form_each_post_or_change_took_is_kept_and_read_back(self):
+    def test_a_card_posted_as_boxes_before_is_read_by_its_form_and_no_post_records_one_now(self):
         import plan
-        assert plan.built_fields({"form": "boxes"}) == {"Form": "boxes"} and plan.built_fields({}) == {}
+        assert plan.built_fields(cards.deploy_card(self.facts([SRV_OFFER]))) == {}
         posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", Form="boxes")]
         assert cards.form_asked(posted, "req_1") == "boxes" and cards.form_asked(posted, "req_2") is None
         assert cards.form_asked(posted + [dict(Act="card.update", Card="req_1", Refused="no")], "req_1") == "boxes"
         assert cards.form_asked(posted + [dict(Act="card.update", Card="req_1")], "req_1") is None
-
-    @pytest.fixture
-    def raised(self, monkeypatch, tmp_path):
-        import plan
-        got = []
-
-        def change(fleet, label, owner, build, facts, note, where, acts=None, kind_changed=False, anew=None, since=None):
-            c = build(facts)["card"]
-            got.append((kind_changed, c.get("kind"), [o["id"] for o in c.get("options") or []]))
-            return "req_1"
-        monkeypatch.setattr(plan, "row_card_change", change)
-        monkeypatch.setattr(ops, "ops_where", lambda fleet, label: ("/b/main", "github.com/o/b"))
-        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
-        monkeypatch.setattr(ops, "kit_range", lambda fleet, label, frm, to: (None, None, "not read"))
-        monkeypatch.setattr(ops.record, "gather", lambda fleet, labels, since: ([], {}))
-        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: [SRV_OFFER, waiting(2)])
-        (tmp_path / "steps.txt").write_text(WAITS)
-        return got
-
-    def test_a_held_card_that_moves_between_the_hold_to_approve_and_boxes_is_followed_and_one_that_stays_is_changed(self, raised):
-        class Acts:
-            def __init__(self, form=None):
-                self.posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops", Head=S2,
-                                    **({"Form": form} if form else {}))]
-
-            def entries(self, label):
-                return self.posted
-        row = {"label": "swancloud", "key": f"deploy/{SRV}"}
-        assert ops.raise_deploy(FLEET, row, Acts(), note="Offered again: its after-deploy steps changed") == "req_1"
-        assert ops.raise_deploy(FLEET, row, Acts("boxes"), note="Offered again: its after-deploy steps changed") == "req_1"
-        assert [(moved, kind) for moved, kind, _ in raised] == [(True, "multi"), (False, "multi")]
-
-    def test_a_step_done_while_a_shared_box_waits_changes_the_card_in_place(self, raised, monkeypatch):
-        """rail-cards "A step recorded done while the card of a shared box waits": the card stays one list, so it is
-        changed in place with its boxes regrouped, never followed."""
-        words = [f"Do step {i} of the move." for i in range(1, 8)]
-        keys = [f"{i}" * 12 for i in range(1, 8)]
-        es = ([SRV_OFFER] + [waiting(1 + i, text=t, key=k) for i, (t, k) in enumerate(zip(words, keys), 1)]
-              + [e("ops.step", env=SRV, minutes=9, Head=S2, Key=keys[4], State="done")])
-        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: es)
-        (ops.kept("swancloud", SRV, S2) / "steps.txt").write_text(
-            "".join(f"step\t{i}\tuser\tbefore\t{SRV}\tWhy step {i}.\t{t}\n" for i, t in enumerate(words, 1)))
-
-        class Acts:
-            posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops", Head=S2, Form="boxes")]
-
-            def entries(self, label):
-                return self.posted
-        row = {"label": "swancloud", "key": f"deploy/{SRV}"}
-        assert ops.raise_deploy(FLEET, row, Acts(), note="A step it waits on is recorded done") == "req_1"
-        assert raised == [(False, "multi", ["before:1", "before:2", "before:3", "before:4-6-7", "deploy"])]
 
 
 class TestAStepRecordedThatTheOfferWaitsOn:

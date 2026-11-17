@@ -23,7 +23,7 @@ Work the tasks in order, from the place's root. Before the first logic check, sy
 ## 4. A deploy card holds no boxes
 
 - [x] 4.1 A deploy waiting on an open step of the user's has no card. Its row names the step's card and the sweep owes it none. An unanswered card, or one from before posted as boxes, is withdrawn, and the card is raised as the hold-to-approve following the step's card once each step is done (design, Decision 8; Task notes 4.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestTheStepsADeployWaitsOn tests/py/test_ops.py::TestAStepRecordedThatTheOfferWaitsOn`.
-- [ ] 4.2 A deploy's card is the hold-to-approve alone, listing the steps it waited on first, each done, and builds no boxes (design, Decision 8; Task notes 4.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestTheDeployCardOfAStepItWaitsOn tests/py/test_ops.py::TestDeployCard`.
+- [x] 4.2 A deploy's card is the hold-to-approve alone, listing the steps it waited on first, each done, and builds no boxes (design, Decision 8; Task notes 4.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestTheDeployCardOfAStepItWaitsOn tests/py/test_ops.py::TestDeployCard`.
 - [ ] 4.3 `crew ops approve` takes no `--ticked`, records no step done, and is refused while a step the deploy waits on is open, naming each step and its card or that it is not recorded yet, the refusal recorded (design, Decision 8; Task notes 4.3). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_ops.py::TestRefusals`.
 
 ## 5. The views
