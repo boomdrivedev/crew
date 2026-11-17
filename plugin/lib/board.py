@@ -213,12 +213,14 @@ def records_proposed(entries, cards):
 
 def environments(fleet, label, entries, rows, cards, since, logs):
     """The drive's environments for the Operation lane: each one's deploys that moved since since or are still open,
-    and the operations waiting on it, as ops.environments reads them from the run record (plan.14, state.4), each
-    deploy and operation with its rail row's marker."""
+    and the operations waiting on it, as ops.environments reads them from the run record (plan.14, state.4) and the
+    card entries it read (logs), each deploy and operation with its rail row's marker, every host's entry of a shared
+    step the one row that carries it (record 0070)."""
+    carded = [e for e in logs if (e.get("Act") or "").startswith("card.")]
     return [{"env": env,
              "deploys": [dict(d, markers=keyed(rows, cards, label, d["row"], logs)) for d in v["deploys"]],
              "waiting": [dict(w, markers=keyed(rows, cards, label, w["row"], logs)) for w in v["waiting"]]}
-            for env, v in ops.environments(entries, iso(since)).items()]
+            for env, v in ops.environments(entries, iso(since), carded).items()]
 
 
 def board_data(fleet, labels, read, now):
@@ -831,16 +833,23 @@ def ops_view(p):
     ticked once they have answered it, and each started bolt whose landing stands on no such row; the head line of each
     bolt that landed on main and whose close was refused, with its words (plan.21), and of each bolt started before
     bolts were base places, which lands under the crew that started it (legacy); then, environment by environment, each
-    deploy waiting on the user's word with its card, each approved and not yet deployed, each running, and each
-    operation step waiting, handed or failed, with the deploy it comes after, or whose gate it is, and its doer; and
-    what keeps a host or the plan from being read. Each hold standing opens it, below its head line (hold_rows)."""
+    deploy waiting on the user's word with its card, or on the user's step, naming the card that asks it (record 0070),
+    each approved and not yet deployed, each running, and each operation step waiting, handed or failed, with the
+    deploy it comes after, or whose gate it is, its doer, and the card that asks it when that card asks it of other
+    hosts too; and what keeps a host or the plan from being read. The head line counts the deploys waiting on a step
+    apart from those waiting on the word, and an operation once however many hosts' entries its row carries. Each hold
+    standing opens it, below its head line (hold_rows)."""
     pending = [(e["env"], d) for e in p.get("environments", []) for d in e["deploys"] if not d["ended"] and d["answer"] != "replaced"]
     steps = [(e["env"], w) for e in p.get("environments", []) for w in e["waiting"]]
-    word = sum(d["answer"] == "waiting" for _, d in pending)
+    word = sum(d["answer"] == "waiting" and not d.get("waits") for _, d in pending)
+    stepped = sum(d["answer"] == "waiting" and bool(d.get("waits")) for _, d in pending)
     running = sum(bool(d["started"]) for _, d in pending)
     fixing = p.get("fixing", [])
+    carried = [w["row"] or f"{env}/{w['key']}" for env, w in steps]
+    shared = {k for k in carried if carried.count(k) > 1}
     head = row(fields((f"{p['label']} operations", "bold"), many(word, "deploy waits on the user's word", "deploys wait on the user's word"),
-                      many(running, "deploy running", "deploys running"), many(len(steps), "operation waiting", "operations waiting"),
+                      many(stepped, "deploy waits on the user's step", "deploys wait on the user's steps") if stepped else "",
+                      many(running, "deploy running", "deploys running"), many(len(set(carried)), "operation waiting", "operations waiting"),
                       many(len(fixing), "fix in flight", "fixes in flight") if fixing else ""))
     out = [head] + hold_rows(p) + [row(fields(f["repo"] or "", f"fix {f['fix']}", f["stage"], f["said"], (f"on {f['host']}", "dim")), " ")
                                     for f in fixing]
@@ -864,11 +873,13 @@ def ops_view(p):
     out += [bolt_row(b) for b in p.get("construction", []) if unclosed(b) or legacy(b)]
     for e in p.get("environments", []):
         for d in (d for env, d in pending if env == e["env"]):
-            out.append(row(fields(e["env"], f"deploy {d['to'][:7]}", deploy_state(d)), gutter(d["markers"]), 0, d["markers"]))
+            said = f"waits on your step, {', '.join(d['waits'])}" if d["answer"] == "waiting" and d.get("waits") else deploy_state(d)
+            out.append(row(fields(e["env"], f"deploy {d['to'][:7]}", said), gutter(d["markers"]), 0, d["markers"]))
         for w in (w for env, w in steps if env == e["env"]):
             doer = (w["doer"] or "no doer named") + (f", {w['agent']}" if w["agent"] else "") + (", held for the user's word" if w.get("held") else "")
             of = (f"gate of {w['to'][:7]}" if w["to"] else "gate") if w.get("gate") else f"after {w['to'][:7]}" if w["to"] else ""
-            out.append(row(fields(e["env"], w["key"], (of, "dim") if of else "", w["state"], f"doer {doer}"),
+            on = f"on {w['row']}" if w["row"] in shared else ""
+            out.append(row(fields(e["env"], w["key"], (of, "dim") if of else "", w["state"], f"doer {doer}", on),
                            gutter(w["markers"]), 0, w["markers"]))
     return out + attention_rows(p, lambda a: a["what"] in ("host", "plan"))
 

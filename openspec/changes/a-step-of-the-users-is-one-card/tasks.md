@@ -28,7 +28,7 @@ Work the tasks in order, from the place's root. Before the first logic check, sy
 
 ## 5. The views
 
-- [ ] 5.1 Every host's entry for a shared step names its one row, and each deploy waiting on a step names its card. Ops's band says so and counts a shared step once (design, Decision 9; Task notes 5.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_board.py::TestViews`.
+- [x] 5.1 Every host's entry for a shared step names its one row, and each deploy waiting on a step names its card. Ops's band says so and counts a shared step once (design, Decision 9; Task notes 5.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider tests/py/test_board.py::TestViews`.
 
 ## 6. Through the command, the brief and the docs
 

@@ -1650,6 +1650,28 @@ class TestViews:
             "✓ mac-studio  rotate-key  waiting  doer user  no card open",
             f"  swancloud-srv  deploy {S1[:7]}  deploying since {board.local(ago(10))}"]
 
+    def test_ops_band_names_one_card_for_a_step_four_hosts_wait_on_and_the_deploy_that_waits_on_it(self):
+        """rail-cards "One step for four hosts before the Willdan cutover" in main-level ops's band (record 0070,
+        Decision 9): every host's entry for the step names its one card, chuck-herdr-alpha's deploy waits on it, and the
+        head line counts the step once and the deploy apart from those waiting on the word."""
+        cha, disk = "chuck-herdr-alpha", "9c1f0e2a7b3d"
+        steps = [entry("ops.offer", 40, env=cha, Head=S2, Base=S1)] + [
+            entry("ops.step", 30 - i, env=x, Head=S2 if x == cha else S1, Key=disk, State="waiting", Doer="user",
+                  Text="Move the Archives disk from mac-studio to deneb.", **({"When": "before"} if x == cha else {}))
+            for i, x in enumerate(("mac-studio", "macbook-pro", "deneb", cha))]
+        heads = f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1} {cha}@{S2}"
+        posted = entry("card.post", 25, Key="op/mac-studio/1", Card="req_7", By="wldn-ops", Heads=heads)
+        step_card = dict(label="wldn", card="req_7", key="op/mac-studio/1", by="wldn-ops", host="mac-studio", at=NOW)
+        mine = view("wldn-ops", entries=steps, logs=steps + [posted], cards=[step_card])
+        assert mine[0] == ("wldn operations  0 deploys wait on the user's word  1 deploy waits on the user's step  0 deploys running  "
+                           "1 operation waiting")
+        assert f"✓ {cha}  deploy {S2[:7]}  waits on your step, op/mac-studio/1  no card open" in mine
+        shared = [l for l in mine if f"  {disk}  " in l]
+        assert len(shared) == 4 and all("  on op/mac-studio/1  card open, asked by wldn-ops" in l for l in shared)
+        envs = {e["env"]: e for e in data(entries=steps, logs=steps + [posted], cards=[step_card])["drives"][0]["environments"]}
+        assert {x: [w["row"] for w in e["waiting"]] for x, e in envs.items()} == {x: ["op/mac-studio/1"] for x in ("mac-studio", "macbook-pro", "deneb", cha)}
+        assert [d["waits"] for d in envs[cha]["deploys"]] == [["op/mac-studio/1"]]
+
     def test_main_level_ops_reads_a_deploy_whose_card_post_was_refused_as_owing_its_card(self):
         """crew-board "A deploy whose card was refused", in main-level ops's view."""
         assert view("wldn-ops", entries=OPS, logs=OPS + [REFUSED_POST])[1] == (
