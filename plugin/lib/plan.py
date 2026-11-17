@@ -3883,7 +3883,7 @@ def lands_sent(entries, key, owner, card=None, shown=(), ticked=()):
     return out
 
 
-def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
+def lands_change(w, kit, rows, sent, reads, work=None, proof=False, on_main=()):
     """The plan write that posts the lands a send makes due (crew-lands-each-bolt-through-flumes-base-place, Decision 4;
     rail-cards "The user's send on a kit's landings card posts one land for each row it lands"), applied to w at its tip:
     the lands due there (runner.lands_due over requests.rec and the run record as the tip holds them, so a replay finds
@@ -3893,14 +3893,16 @@ def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
     and the rest written with it (Write.also). Raises Unposted where none is due at the tip. Returns [(work, request,
     head)]. With proof, the lands due on proof (a-proven-bolt-lands-on-proof, Decision 1; rail-cards "A proven bolt not
     marked to stay lands on proof"), sent keyed by no card ({work: (None, head)}), each entry marked Form: proof with no
-    Card, the write's subject saying they land on proof."""
+    Card, the write's subject saying they land on proof. on_main, the bolts of the rows crew read landed on their kit's
+    main before the write (landed_on_main), are posted no land on a send or on proof (runner.lands_due;
+    a-bolt-keeps-its-priority-until-it-is-moved, Decision 7)."""
     # re-checked at the tip it is applied to (plan.1): a hold put meanwhile posts nothing, and a land on proof is posted
     # only for a bolt the plan still holds and does not mark to stay
     if hold_on(w.plan, kit):
         raise Unposted()
     if proof:
         rows = [r for r in rows if (w.plan.bolt(r["bolt"]) or Rec("Bolt", [])).get("Stays") != "yes" and w.plan.bolt(r["bolt"])]
-    due = runner.lands_due(rows, sent, requests_of(w).recs("Request"), reads, lands_posted(w.entries()), work) if rows else []
+    due = runner.lands_due(rows, sent, requests_of(w).recs("Request"), reads, lands_posted(w.entries()), work, on_main) if rows else []
     if not due:
         raise Unposted()
     heads = {r.get("work") or f"bolt/{r['bolt']}": (r.get("facts") or {}).get("head") or "" for r in rows}
@@ -3923,17 +3925,37 @@ def lands_change(w, kit, rows, sent, reads, work=None, proof=False):
 def lands_post(fleet, label, kit, owner, rows, sent, reads, work=None, proof=False):
     """The lands a send on a kit's landings card makes due, or with proof those due on proof, posted by one plan write in
     main-level ops's name, the card's owner (lands_change): [(work, request, head)] posted, [] where none is due, nothing
-    written."""
-    posted = []
+    written. Which bolts of its rows with a box are landed on their kit's main is read before the write (landed_on_main),
+    and none of them is posted a land."""
+    posted, on_main = [], landed_on_main(fleet, label, rows, reads)
 
     def change(w):
-        posted[:] = lands_change(w, kit, rows, sent, reads, work, proof)
+        posted[:] = lands_change(w, kit, rows, sent, reads, work, proof, on_main)
         return []
     try:
         write(fleet, label, change, f"plan({kit}): land " + ("on proof" if proof else "on the user's send"), act="bolt.submit", by=owner)
     except Unposted:
         return []
     return posted
+
+
+def landed_on_main(fleet, label, rows, reads):
+    """The bolts of a kit's landings rows with a box that crew reads landed on their kit's main (Stages.main_landing over
+    the drive's plan, its requests.rec as this command read them and its runners as the raise read them, reads, as
+    landing_on_main reads one; plan.21), read before a write posts their lands (lands_post), so the raise asks no land of
+    a bolt the first act that reads it closes (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7). A bolt whose main
+    crew can't read is not landed, and none is where the plan or the requests can't be read (read.1); a fix of main's row
+    is no bolt's."""
+    boxed = [r["bolt"] for r in rows if r.get("box") and r.get("bolt") and not (r.get("work") or "").startswith("fix/main/")]
+    pl = plan_of(fleet, label) if boxed else None
+    if pl is None:
+        return set()
+    try:
+        requests, _ = runner_facts(fleet, label)
+    except Refusal:
+        return set()
+    st = Stages(fleet, pl, {}, runs={label: (requests, reads)}, label=label)
+    return {b for b in boxed if pl.bolt(b) is not None and st.main_landing(pl.bolt(b))[0]}
 
 
 def holds_change(w, label, due, requests):

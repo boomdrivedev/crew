@@ -2698,6 +2698,34 @@ class TestTheRaisePostsTheLands:
         assert plan.lands_sent(entries, "land/crew", "swancloud-ops", "req_k1", shown, ["y"]) == {
             "bolt/w": ("req_k0", "1111111"), self.FIX: ("req_k0", "2222222"), "bolt/y": ("req_k1", "abc1234")}
 
+    def test_a_proven_bolt_already_on_main_is_posted_no_land_on_proof(self, monkeypatch):
+        """rail-cards "On main before the runner reports it" (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7):
+        GitHub's main holds y's work, its unit a's place landed on bolt/y, its base place live with no land standing, y
+        proven and not marked to stay: lands_post on proof reads y landed on main before its write, posts no land of it
+        and writes nothing, where the same row would be due a land were main not read."""
+        import runner
+        from facts import FactsWrite, launched, ran
+        monkeypatch.setenv("CREW_AGENT", "swancloud-ops")
+        on_main(monkeypatch)
+        p, requests = launched(["y"], work=[("a", "y", [], "unit", [])])  # a's launch request 1, y's base place 2
+        reads = ran({1: "flume-0.20.0/landed-held", 2: "flume-0.17.0/bolt-submitted"}, label="swancloud", commits={1: ON_MAIN_UNIT})
+        monkeypatch.setattr(plan, "plan_of", lambda fleet, label: p)
+        monkeypatch.setattr(plan, "runner_facts", lambda fleet, label: (requests, reads))
+        written = []
+
+        def write(fleet, label, change, subject, **k):  # the write applied at a tip holding the plan and requests.rec as read
+            w = FactsWrite(p.text(), files={"requests.rec": runner.REQUESTS + "".join("\n" + "\n".join(r.lines()) + "\n" for r in requests)},
+                           label=label, entries=list(ON_MAIN_ENTRIES))
+            change(w)  # raises plan.Unposted where nothing is due, so nothing is written
+            written.append(w.subject)
+            return "c" * 40
+        monkeypatch.setattr(plan, "write", write)
+        rows, sent = [box("y", ON_MAIN_HEAD)], {"bolt/y": (None, ON_MAIN_HEAD[:7])}
+        assert runner.lands_due(rows, sent, requests, reads) == [("bolt/y", 2)]
+        assert plan.landed_on_main(FLEET, "swancloud", rows, reads) == {"y"}
+        assert plan.lands_post(FLEET, "swancloud", "crew", "swancloud-ops", rows, sent, reads, proof=True) == []
+        assert written == []
+
     def test_a_raise_reading_the_send_posts_the_lands_of_the_ticked_rows_and_a_second_raise_none(self, monkeypatch, capsys):
         """rail-cards "Read with no session of ops's running" and "Two bolts sent": the user ticked y and z; the raise
         posts two lands in the card's order, says each, tells no agent and leaves the card while they land; the next
