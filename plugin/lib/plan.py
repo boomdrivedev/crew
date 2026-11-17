@@ -5795,6 +5795,10 @@ def op_plan_go(ctx, a):
 
 
 def op_bolt_order(ctx, a):
+    """crew bolt order <bolt> --first | --last | --before <other>: the bolt moved in the plan's order, and, for a started
+    bolt, a priority appended for each unfinished place of it alone, its base place among them, where the move takes it
+    out of order with its started neighbours (runner.numbering, reprioritise; a-bolt-keeps-its-priority-until-it-is-moved,
+    Decision 3), none for another bolt's unless the bolts are numbered afresh; so a move applied again appends nothing."""
     label, _ = ctx.locate("Bolt", a.bolt)
 
     def change(w):

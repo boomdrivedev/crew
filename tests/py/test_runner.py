@@ -1525,9 +1525,10 @@ class TestPriorities:
         assert [p for p in self.priorities(w) if p[0].startswith("unit/")] == [
             ("unit/x-unit", "1000000000000"), ("unit/y-unit", "999999000000"), ("unit/z-unit", "999998000000")]
 
-    def test_a_reorder_sends_only_what_changed(self, monkeypatch):
-        """crew bolt order puts z above y: requests.rec gains a priority for each launched place of y and z, whose
-        priorities changed, and none for x's."""
+    def test_a_reorder_re_sets_only_the_moved_bolts_places(self, monkeypatch):
+        """x, y and z started in turn, and crew bolt order z --before y: requests.rec gains a priority of z's base place
+        and its unit at the whole number halfway between x's and y's, and none for x's or y's; applied again, it gains
+        nothing."""
         from facts import apply, known
         monkeypatch.setenv("CREW_AGENT", BY)
         w = self.write(("x", None), ("y", None), ("z", None))
@@ -1536,8 +1537,8 @@ class TestPriorities:
         n = len(plan.Plan(w.files["requests.rec"]).recs("Request"))
         apply(w, "bolt order z --before y", ctx=known(w, fleet=self.FLEET))
         new = plan.Plan(w.files["requests.rec"]).recs("Request")[n:]
-        assert [(r.get("Act"), r.get("Work"), r.get("Priority")) for r in new] == [
-            ("priority", "unit/y-unit", "1"), ("priority", "unit/z-unit", "2")]
+        assert [(r.get("Act"), r.get("Work"), r.get("Of"), r.get("Priority")) for r in new] == [
+            ("priority", "bolt/z", "5", "999999500000"), ("priority", "unit/z-unit", "6", "999999500000")]
         apply(w, "bolt order z --before y", ctx=known(w, fleet=self.FLEET))
         assert len(plan.Plan(w.files["requests.rec"]).recs("Request")) == n + 2
 
