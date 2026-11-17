@@ -1,29 +1,31 @@
 # Verify: a-step-of-the-users-is-one-card
 
-Verified 2026-11-17 on `change/a-step-of-the-users-is-one-card` at eb989441, cut from `bolt/crew-stops-flooding-the-runner-and-your-cards`.
+Verified 2026-11-17 on `change/a-step-of-the-users-is-one-card` at c07d62d3, cut from `bolt/crew-stops-flooding-the-runner-and-your-cards` and holding its base at ef7bc49f, where `a-bolt-keeps-its-priority-until-it-is-moved` landed.
 
-**Verdict: ready to archive.** The whole checks pass. All 17 tasks are ticked, and every requirement and scenario of both deltas is met, each with a case.
+**Verdict: ready to archive.** The whole checks pass on the merged code. All 18 tasks are ticked, and every requirement and scenario of both deltas is met, each with a case.
 
 ## The whole checks
 
 `tests/suite --affected` was run once, as CLAUDE.md names it for a finished change before its merge. It runs every `check-full` task whose inputs differ from the merge-base with main.
 
-**Result: 32 passed (31 replayed), 0 failed.**
+**Result: 32 passed (0 replayed), 0 failed.**
 
-- `logic` ran fresh and passed.
-- The other 31 replayed a pass on this host with identical inputs, which `tests/suite` allows: `contract`, `t-briefs`, `t-cards`, `t-docs`, `t-drive-set`, `t-flume-source`, `t-help`, `t-hold`, `t-journey-board`, `t-journey-cross`, `t-journey-land`, `t-journey-main`, `t-journey-main-fix`, `t-journey-ops`, `t-journey-plan`, `t-journey-review`, `t-journey-roles`, `t-journey-signals`, `t-journey-state`, `t-release`, `t-roles`, `t-runner`, `t-session-hook`, `t-slot`, `t-sluice`, `t-specs`, `t-stage-facts`, `t-suite`, `t-teams`, `t-waits` and `t-word`.
-  - The only files changed since 9225d843 are `tests/py/test_card_commands.py`, `tests/py/test_rail.py` and this change's `tasks.md`, which are inputs of `logic` alone.
-- The two cases of this change's own that pin the whole sweep judgement and the deploy card now hold:
+- Every task ran fresh: `contract`, `logic`, `t-briefs`, `t-cards`, `t-docs`, `t-drive-set`, `t-flume-source`, `t-help`, `t-hold`, `t-journey-board`, `t-journey-cross`, `t-journey-land`, `t-journey-main`, `t-journey-main-fix`, `t-journey-ops`, `t-journey-plan`, `t-journey-review`, `t-journey-roles`, `t-journey-signals`, `t-journey-state`, `t-release`, `t-roles`, `t-runner`, `t-session-hook`, `t-slot`, `t-sluice`, `t-specs`, `t-stage-facts`, `t-suite`, `t-teams`, `t-waits` and `t-word`.
+- The cases of this change's own that pin the whole sweep judgement and the deploy card hold beside the base's runner and landings work:
   - `test_a_deploy_that_waited_on_seven_steps_posts_the_hold_to_approve_and_nothing_is_refused` asserts rail-cards "The step done". It posts the hold-to-approve of risk high with the seven steps listed done first. It has no box, question or `highStakes`, and records no form.
   - The three `TestSweepJudged` cases expect the `moved` key the sweep's judgement carries (task 3.4).
 
 ## Tasks
 
-All 17 tasks in `tasks.md` are ticked `[x]`, and none is open.
+All 18 tasks in `tasks.md` are ticked `[x]`, and none is open.
 
 - **1.1**
   - `openspec/changes/an-offer-card-shows-the-step-the-deploy-waits-on-first` is gone.
   - `devenv shell -- openspec validate a-step-of-the-users-is-one-card --strict` reports "Change 'a-step-of-the-users-is-one-card' is valid".
+- **1.2**
+  - `openspec/changes/archive/2026-11-17-a-step-of-the-users-is-one-card` does not exist, and `git diff --quiet ef7bc49f -- openspec/specs` holds: the specs are the base's.
+  - The change validates strict beside rail-cards' "No land is posted for work that has landed or been dropped", and `openspec validate --specs --strict` reports 29 passed, 0 failed.
+  - `tests/py/test_rail.py` runs in `logic`, which passed above.
 - **2.1 to 5.1**: their named classes and files run in `logic`, which passed above.
   - `tests/py/test_ops.py`: `TestOneStepManyHosts`, `TestRows`, `TestStepCard`, `TestOneStepCardAtATime`, `TestSettle`, `TestStepRecordedAgain`, `TestTheStepsADeployWaitsOn`, `TestAStepRecordedThatTheOfferWaitsOn`, `TestTheDeployCardOfAStepItWaitsOn`, `TestDeployCard` and `TestRefusals`.
   - `tests/py/test_card_commands.py`, `TestAStepCardsHeads` among it.
