@@ -755,13 +755,13 @@ class TestOneStepCardAtATime:
 
     def test_the_first_step_that_waits_on_the_user_is_raised_and_the_next_only_once_its_card_closes(self):
         due, open_ = ops.step_due(self.STEPS, self.DEPLOY, "mac-studio")
-        assert (due[0], due[1], open_) == (2, ("mac-studio", S1, "rotate/1"), None)
+        assert (due["row"], due["steps"][0][1], open_) == ("op/mac-studio/2", ("mac-studio", S1, "rotate/1"), None)
         posted = self.DEPLOY + [card("card.post", "op/mac-studio/2", "req_s2", 2, By="wldn-ops")]
         assert ops.step_due(self.STEPS, posted, "mac-studio") == (None, "op/mac-studio/2")
         done = self.STEPS + [e("ops.step", minutes=4, Head=S1, Key="rotate/1", State="done")]
         closed = posted + [card("card.close", "op/mac-studio/2", "req_s2", 3, State="closed")]
         due, open_ = ops.step_due(done, closed, "mac-studio")
-        assert (due[0], due[1][2], open_) == (3, "restart-herdr/1", None)
+        assert (due["row"], due["steps"][0][1][2], open_) == ("op/mac-studio/3", "restart-herdr/1", None)
         follows = cards.follows_of("step", {"env": "mac-studio", "key": "op/mac-studio/3"}, closed, "wldn-ops")
         assert follows == "req_s2" and cards.follows_of("step", {"env": "mac-studio", "key": "op/mac-studio/2"}, self.DEPLOY, "wldn-ops") == "req_d"
 
@@ -770,16 +770,62 @@ class TestOneStepCardAtATime:
                              card("card.post", "op/mac-studio/3", "req_s3", 4), card("card.close", "op/mac-studio/3", "req_s3", 5),
                              card("card.post", "op/box/1", "req_b1", 6)]
         assert ops.step_due(self.STEPS, had, "mac-studio") == (None, None)
-        assert ops.step_due(self.STEPS, self.DEPLOY + had[-1:], "mac-studio")[0][0] == 2
+        assert ops.step_due(self.STEPS, self.DEPLOY + had[-1:], "mac-studio")[0]["row"] == "op/mac-studio/2"
 
     def test_a_rows_point_has_come_when_it_is_next_due_or_its_card_is_the_one_open_as_the_rails_sweep_asks(self):
-        assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/2")[0][0] == 2
+        assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/2")[0]["row"] == "op/mac-studio/2"
         assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/3") == (None, "its step waits on no one, or another's card comes first")
         posted = self.DEPLOY + [card("card.post", "op/mac-studio/2", "req_s2", 2)]
-        assert ops.step_point(self.STEPS, posted, "op/mac-studio/2")[0][1] == ("mac-studio", S1, "rotate/1")
+        assert ops.step_point(self.STEPS, posted, "op/mac-studio/2")[0]["steps"][0][1] == ("mac-studio", S1, "rotate/1")
         assert ops.step_point(self.STEPS, posted, "op/mac-studio/3") == (None, "card op/mac-studio/2 is open: this step's card is raised when it closes")
         done = self.STEPS + [e("ops.step", minutes=4, Head=S1, Key="rotate/1", State="done")]
         assert ops.step_point(done, posted, "op/mac-studio/2") == (None, "its step no longer waits on the user")
+
+    SHARED = [card("card.post", "deploy/deneb", "req_dd", 1, By="afterthought-ops"),
+              card("card.post", "op/mac-studio/1", "req_m1", 2, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}")]
+
+    def test_a_shared_card_holds_a_hosts_own_step_back_and_its_card_then_follows_it(self):
+        """rail-cards "A shared step's card holds a host's own step back"."""
+        es = [disk("mac-studio", 1), disk("deneb", 2), disk("deneb", 3, key="rotate-kanidm", Text="Rotate the kanidm admin password.")]
+        assert ops.step_due(es, self.SHARED, "deneb") == (None, "op/mac-studio/1")
+        assert ops.step_point(es, self.SHARED, "op/deneb/2") == (None, "card op/mac-studio/1 is open: this step's card is raised when it closes")
+        done = es + [e("ops.step", env=x, minutes=4, Head=S1, Key=DISK, State="done", Doer="user") for x in ("mac-studio", "deneb")]
+        closed = self.SHARED + [card("card.close", "op/mac-studio/1", "req_m1", 5, State="closed")]
+        due, _ = ops.step_due(done, closed, "deneb")
+        assert due["row"] == "op/deneb/2"
+        assert cards.follows_of("step", {"env": "deneb", "key": "op/deneb/2"}, closed, "afterthought-ops") == "req_m1"
+
+    def test_two_shared_steps_recorded_in_opposite_orders_raise_one_then_the_other(self):
+        """rail-cards "Two shared steps recorded in opposite orders"."""
+        a, b = DISK, "rotate-kanidm"
+        es = [disk("mac-studio", 1, key=a), disk("deneb", 2, key=b), disk("mac-studio", 3, key=b), disk("deneb", 4, key=a)]
+        assert [ops.step_due(es, [], x)[0]["row"] for x in ("mac-studio", "deneb")] == ["op/mac-studio/1", "op/mac-studio/1"]
+        posted = [card("card.post", "op/mac-studio/1", "req_a", 5, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}")]
+        assert [ops.step_due(es, posted, x) for x in ("mac-studio", "deneb")] == [(None, "op/mac-studio/1")] * 2
+        done = es + [e("ops.step", env=x, minutes=6, Head=S1, Key=a, State="done", Doer="user") for x in ("mac-studio", "deneb")]
+        closed = posted + [card("card.close", "op/mac-studio/1", "req_a", 7, State="closed")]
+        assert [ops.step_due(done, closed, x)[0]["row"] for x in ("mac-studio", "deneb")] == ["op/deneb/1", "op/deneb/1"]
+
+    def test_a_step_a_host_records_after_the_answer_follows_the_answered_card_saying_so(self, monkeypatch):
+        """rail-cards "A host records the step after the user answered"."""
+        from test_card_commands import Acts, MATCHED, POSTED
+        answered = [card("card.post", "op/mac-studio/7", "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS),
+                    card("card.answer", "op/mac-studio/7", "req_7", 7, By="afterthought-ops"),
+                    card("card.close", "op/mac-studio/7", "req_7", 8, By="afterthought-ops", State="closed", Answer="done")]
+        settled = CUTOVER + [e("ops.step", env=x, minutes=9, Head=S2 if x == CHA else S1, Key=DISK, State="done", Doer="user")
+                             for x in ("mac-studio", "macbook-pro", "deneb", CHA)] + [disk(SRV, 10)]
+        due, _ = ops.step_due(settled, answered, SRV)
+        assert due["row"] == f"op/{SRV}/1" and ops.answered_card(settled, answered, due, "afterthought-ops") == "req_7"
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: settled)
+        monkeypatch.setattr(ops, "ops_where", lambda fleet, label: ("/b/main", "github.com/o/b"))
+        a = Acts({"match_area": (MATCHED, None), "post_request": (dict(POSTED, requestId="req_srv"), None)}, entries=answered,
+                 caller="afterthought-ops")
+        a.kits = lambda label: ()
+        assert ops.raise_step(FLEET, {"label": "afterthought", "key": f"op/{SRV}/1"}, a) == "req_srv"
+        sent = a.calls[-1][1]
+        assert sent["follows"] == "req_7" and sent["summary"].startswith(
+            "You answered the card before this one, posted 2026-10-12 11:06 UTC, by 11:08 UTC: done. Since then: "
+            f"{SRV} has recorded this step, which that answer did not settle.")
 
 
 class TestStepRecordedAgain:
