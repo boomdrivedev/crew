@@ -1539,14 +1539,25 @@ class TestPriorities:
         apply(w, "bolt order y --first", ctx=known(w, fleet=self.FLEET))
         assert "requests.rec" not in w.files
 
-    def test_a_dropped_launch_a_fix_of_main_and_a_bolt_gone_take_no_priority(self):
-        p = plan.Plan(flume_plan([("x", None, "flume"), ("y", None, "flume")]))
-        fix = dict(Base="main", Intent="madswan/main/crew", Recipient="madswan/ops", Name="main--red", Hold="submission")
-        rs = held(rec(1, "launch", Base="bolt/x"), rec(2, "drop", Of=1), rec(3, "launch", "unit/b", Base="bolt/gone"),
-                  rec(4, "launch", "fix/main/crew/red", **fix), rec(5, "launch", "unit/c", Base="bolt/y", Priority=7),
-                  rec(6, "priority", "unit/c", Of=5, Priority=1))
-        assert runner.priorities(p, rs) == []
-        assert [(r.get("Request"), n) for r, n in runner.priorities(p, rs[:5])] == [("5", 1)]
+    def test_finished_or_dropped_work_takes_no_priority(self):
+        """x and y moved, their numbers now 9: x's unit a dropped by crew, b refused by the runner, c over and landed on
+        the bolt, d over and dropped, and y's base place refused take none; x's base place, live, and e, in code, take 9."""
+        rs = held(rec(1, "launch", "bolt/x", **dict(BOLT, Name="x", Priority=5)), rec(2, "launch", "unit/a", Base="bolt/x", Priority=5),
+                  rec(3, "drop", "unit/a", Of=2), rec(4, "launch", "unit/b", Base="bolt/x", Priority=5),
+                  rec(5, "launch", "unit/c", Base="bolt/x", Priority=5), rec(6, "launch", "unit/d", Base="bolt/x", Priority=5),
+                  rec(7, "launch", "unit/e", Base="bolt/x", Priority=5), rec(8, "launch", "bolt/y", **dict(BOLT, Name="y", Priority=4)))
+        reads = ran({1: "flume-0.17.0/bolt-submitted", 5: "landed", 6: "dropped", 7: "code"},
+                    refused={4: "no room for it", 8: "crew/bolt@1 is not locked on deneb"})
+        assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, {"x": 9, "y": 9})] == [("1", 9), ("7", 9)]
+        assert [runner.finished(rs, reads, r) for r in rs if r.get("Act") == "launch"] == [False, False, True, True, True, False, True]
+
+    def test_a_place_crew_cant_read_is_re_set(self):
+        """x's unit a launched on a runner crew does not read: crew can't tell it finished, so it is re-set."""
+        rs = held(rec(1, "launch", "unit/a", Base="bolt/x", Priority=5))
+        unread = {"deneb": runner.host_read("madswan", "deneb", TIP, {}, {})}
+        for reads in (unread, {}):
+            assert [(r.get("Request"), n) for r, n in runner.priorities(rs, reads, {"x": 9})] == [("1", 9)]
+        assert runner.priorities(rs, unread, {"x": 5}) == []
 
 
 class TestBoltLaunch:

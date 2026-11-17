@@ -1179,22 +1179,39 @@ def reach(plan, requests, bolt, label, again=()):
     return out
 
 
-def priorities(plan, requests):
-    """The priority requests a write that launches or reorders bolts appends (Decision 6): [(launch, its priority now)]
-    for each launch standing on a bolt given through Flume whose priority, its bolt's place in the plan now
-    (priority_of), differs from the last its requests set, its launch's or a later priority's; none for a fix of main,
-    or a bolt gone from the plan."""
+def priorities(requests, reads, numbers):
+    """The priority requests a start or a move appends (a-bolt-keeps-its-priority-until-it-is-moved, Decisions 3, 5 and
+    6), from plain facts (code.7): requests, requests.rec's records; reads, the drive's runners as crew read them
+    (host_read's, by host); numbers, {bolt: its priority now} as numbering gives it. Returns [(launch, its priority)], in
+    requests.rec's order, for each launch standing (standing) of a bolt in numbers, its base place (bolt/<bolt>) among
+    them, since every later launch on the bolt reads its number there, whose last set priority, its launch's or a later
+    priority's of it, differs from the bolt's; and for each fix of main standing whose last set priority is not
+    MAIN_PRIORITY, one launched before bolts kept theirs, so the next start or move re-sets it once. None for work that
+    is finished (finished), whether or not the plan still holds its bolt; a launch whose place crew can't read is
+    re-set, since crew takes nothing it can't read as finished (read.1)."""
     last = {}
     for r in requests:
-        if r.get("Act") == "launch" or (r.get("Act") == "priority" and r.get("Of") in last):
-            last[r.get("Request") if r.get("Act") == "launch" else r.get("Of")] = r.get("Priority")
+        if r.get("Act") == "launch":
+            last[r.get("Request")] = whole(r.get("Priority"))
+        elif r.get("Act") == "priority" and r.get("Of") in last:
+            last[r.get("Of")] = whole(r.get("Priority"))
     out = []
     for r in standing(requests):
-        base = r.get("Base") or ""
-        p = priority_of(plan, base[len("bolt/"):]) if base.startswith("bolt/") else None
-        if p is not None and str(p) != last.get(r.get("Request")):
+        work, base = r.get("Work") or "", r.get("Base") or ""
+        bolt = work[len("bolt/"):] if work.startswith("bolt/") else base[len("bolt/"):] if base.startswith("bolt/") else None
+        p = numbers.get(bolt) if bolt is not None else MAIN_PRIORITY if work.startswith("fix/main/") else None
+        if p is not None and p != last.get(r.get("Request")) and not finished(requests, reads, r):
             out.append((r, p))
     return out
+
+
+def finished(requests, reads, launch):
+    """Whether a launch's work is over, so it takes no priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 5):
+    its piece's stage (piece_stage) merged, landed or dropped as the runner reports its place, refused by the runner, or
+    a base place the runner refused (unlaunched, refused). A launch whose stage reads unknown is not finished (read.1);
+    one crew dropped is left out by standing."""
+    s = piece_stage(requests, reads, launch)
+    return s["stage"] in ("merged", "landed", "dropped", "refused") or (s["stage"] == "unlaunched" and bool(s.get("refused")))
 
 
 def amending(work, launch, answer, place, read):
