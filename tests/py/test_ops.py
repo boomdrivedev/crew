@@ -267,13 +267,51 @@ class TestRefusals:
         (["step", "mac-studio", "--label", "wldn", "--key", "k", "--state", "waiting", "--doer", "main-ops", "--when", "quiet", "--held"], None),
         (["offer", "mac-studio", "--label", "wldn", "--from", "none", "--to", S1, "--notes", "n.md", "--steps", "s.txt"], None),
         (["offer", "mac-studio", "--label", "wldn", "--from", "none", "--to", S1], None),
-        (["approve", "mac-studio", "--label", "wldn", "--to", S1, "--ticked", "1,x"], "--ticked 1,x is no list of the card's step numbers: 1 or 1,2"),
-        (["approve", "mac-studio", "--label", "wldn", "--to", S1, "--ticked", "1,2"], None),
+        (["approve", "mac-studio", "--label", "wldn", "--to", S1], None),
+        (["settle", "op/mac-studio/7", "--label", "wldn", "--state", "done"], None),
+        (["settle", "op/Mac/7", "--label", "wldn", "--state", "done"], "op/Mac/7 is no step card's key: op/<env>/<n>, as the rail shows it"),
         (["record", "mac-studio", "--label", "wldn", "--to", S1, "--act", "end", "--outcome", "failed", "--does", "read the log"], None),
         (["record", "mac-studio", "--label", "wldn", "--to", S1, "--act", "step", "--step", "guests", "--outcome", "failed",
           "--does", "read the log"], None)])
     def test_a_commit_an_environment_a_drive_or_a_key_crew_cant_take_is_refused(self, argv, said):
         assert ops.args_refusal(FLEET, ops.parser().parse_args(argv)) == said
+
+    def test_approve_takes_no_ticks_and_settle_takes_done_or_declined_alone(self, capsys):
+        """main-level "Ticks given": --ticked from an older brief is refused as an argument approve does not take."""
+        for argv in (["approve", CHA, "--label", "afterthought", "--to", S2, "--ticked", "1"],
+                     ["settle", "op/mac-studio/7", "--label", "afterthought", "--state", "failed"]):
+            with pytest.raises(SystemExit) as x:
+                ops.parser().parse_args(argv)
+            assert x.value.code == 2
+        assert "unrecognized arguments: --ticked 1" in capsys.readouterr().err
+
+    def test_an_approval_while_a_step_it_waits_on_is_open_is_refused_naming_each_step_and_its_card(self):
+        """main-level "An approval while a step it waits on is open"."""
+        rowed = ops.keyed(CUTOVER)
+        waits = ops.deploy_waits(CUTOVER, CHA, ops.handed_steps(WAITS.replace(SRV, CHA), CHA, "afterthought")[0])
+        assert ops.waited_refusal(CHA, S2, waits, rowed) == (
+            f'the deploy of {CHA} to bbbbbbb waits on your step "{MOVE}", asked on op/mac-studio/7: its card is raised, and your word '
+            "given, once that step is done")
+        unrecorded = ops.deploy_waits([CUTOVER_OFFER], CHA, ops.handed_steps(WAITS.replace(SRV, CHA), CHA, "afterthought")[0])
+        assert ops.waited_refusal(CHA, S2, unrecorded, {}) == (
+            f'the deploy of {CHA} to bbbbbbb waits on your step "{MOVE}", which its deployer has not recorded on {CHA} yet: its card is '
+            "raised, and your word given, once that step is done")
+        done = CUTOVER + [e("ops.step", env=CHA, minutes=9, Head=S2, Key=DISK, State="done", Doer="user")]
+        assert ops.waited_refusal(CHA, S2, ops.deploy_waits(done, CHA), ops.keyed(done)) is None
+
+    def test_the_refusal_is_recorded_and_no_word_given(self, monkeypatch, tmp_path):
+        import plan
+        emitted = []
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: CUTOVER)
+        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
+        monkeypatch.setattr(ops, "emit", lambda label, act, env, why, refused=None, **f: emitted.append((act, refused, f)))
+        monkeypatch.setattr(plan, "CardActs", lambda fleet: type("Acts", (), {"entries": lambda self, label: []})())
+        (tmp_path / "steps.txt").write_text(WAITS.replace(SRV, CHA))
+        with pytest.raises(ops.Refusal, match="asked on op/mac-studio/7"):
+            ops.approve(FLEET, ops.parser().parse_args(["approve", CHA, "--label", "afterthought", "--to", S2]))
+        (act, refused, f), = emitted
+        assert (act, f["Head"]) == ("ops.approve", S2) and refused.startswith(f"the deploy of {CHA} to bbbbbbb waits on your step")
+        assert ops.state(CUTOVER)[1] == {}
 
     def test_crew_ops_answers_help_as_the_deployers_probe_reads_it(self, capsys):
         with pytest.raises(SystemExit) as x:
