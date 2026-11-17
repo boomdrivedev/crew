@@ -270,6 +270,20 @@ class TestWaitsOn:
         places = [{"Request": n, "Place": f"/p{n}", "Status": on} for n in ("12", "3", "4", "5", "99")]
         assert [w[1] for w in asks.waits_on("madswan/planner", reqs, places)] == ["3", "12"]
 
+    def test_a_base_place_held_under_crews_words_waits_on_no_role(self):
+        """bolt-teams, A held base place asks no role: a bolt's base place waiting on a retry of its submission under
+        the hold crew posted, not lapsed, as the runner carries flume 0.26.0's status of it (tests/py/flume-0.26.0/;
+        design Context of a-bolt-waiting-on-the-user-waits-under-words)."""
+        req = launch(41, "bolt/z", "swancloud/ops")
+        assert asks.waits_on("swancloud/ops", [req], [{"Request": "41", "Status": delivered("flume-0.26.0/bolt-held")}]) == []
+
+    def test_a_base_place_stalled_after_its_hold_lapsed_waits_on_ops(self):
+        """bolt-teams, A held base place asks no role: once Flume reads it stalled after the hold lapsed, it waits on
+        ops again."""
+        req = launch(41, "bolt/z", "swancloud/ops")
+        got = asks.waits_on("swancloud/ops", [req], [{"Request": "41", "Status": delivered("flume-0.26.0/bolt-held-lapsed")}])
+        assert [(w[0], w[1], w[2]) for w in got] == [("place/41@1794700000", "41", "bolt/z")]
+
 
 def delivered(name="flume-deliveries/owed"):
     """A Flume status fixture's text (facts.flume_fixture), as the runner carries it in places.rec."""

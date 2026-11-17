@@ -286,14 +286,15 @@ def flume_fixture(name):
 
 
 def ran(launched=None, held=(), host="deneb", label="madswan", repository="/crew/main", unplaced=None, refused=None,
-        keeps=("afterthought/crew",), commits=None):
+        keeps=("afterthought/crew",), commits=None, done=()):
     """A host's runner as crew reads it from its branch (runner.host_read): each launch in launched, {request's number:
     the Flume status fixture its place stands at (flume_fixture: tests/py/flume-0.3.6/<name>.json, or another version's
     named with its folder)}, answered launched and carried in places.rec at the fixture's own place, its repository given
     as repository, and its stream the drive's label, as its host's Flume configuration maps it; each in unplaced,
     {request's number: its place}, answered launched at that place with no status of it carried yet; each in held
     answered held, with the runner's words where held is {request's number: words}; and each in refused, {request's
-    number: the runner's words}, answered refused; each in commits, {request's number: a commit}, has its fixture's
+    number: the runner's words}, answered refused; each in done, a request's number, answered done, as the runner
+    answers an act it carried on a launch, a hold among them; each in commits, {request's number: a commit}, has its fixture's
     landed commit, as a place tidied over landed names it, set to that commit. Its repositories.rec names each forge address in keeps at repository,
     the kit's folder on host where crew reads it (runner.where, Decision 1 of a-bolts-landing-on-main-reads-landed); a
     runner given no repository, or keeps None, reports no repositories."""
@@ -315,6 +316,7 @@ def ran(launched=None, held=(), host="deneb", label="madswan", repository="/crew
     answers += "".join(f"\nRequest: {n}\nOutcome: held\n" + (f"Words: {w}\n" if w else "") + "At: 2026-10-31T12:01:00Z\n"
                        for n, w in words.items())
     answers += "".join(f"\nRequest: {n}\nOutcome: refused\nWords: {w}\nAt: 2026-10-31T12:01:00Z\n" for n, w in (refused or {}).items())
+    answers += "".join(f"\nRequest: {n}\nOutcome: done\nAt: 2026-10-31T12:01:00Z\n" for n in done)
     files = {"runner.rec": plan.Plan(runner.RUNNER + f"\nHost: {host}\nVersion: 0.1.0\nSince: 2026-10-31T11:00:00Z\n"),
              "answers.rec": plan.Plan(runner.ANSWERS + answers), "places.rec": plan.Plan(runner.PLACES + places)}
     if repository is not None and keeps is not None:
