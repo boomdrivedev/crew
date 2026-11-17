@@ -1137,15 +1137,16 @@ def restart(plan, requests, reads, bolt, label):
     return drops + [bolt_launch(plan, bolt, label, priority_of(requests, bolt))], None
 
 
-def reach(plan, requests, bolt, label, again=()):
+def reach(plan, requests, bolt, label, again=(), priority=None):
     """What a plan write asks of the runners for a started bolt (Decisions 5 and 7), as the requests to append in order,
     each (act, work, its fields as plan.request takes them), from facts: plan, as the write leaves it; requests,
     requests.rec's records before them; label, the bolt's drive; again, the work (as requests name it) whose launch
     is dropped and launched anew, an amendment of a unit whose place is not launched. Each unit and chore of the bolt
     with no launch standing is launched, as a start launches them: in the file's order, each after the work its After
     names, cut from the bolt's branch, carrying the bolt's repository as the plan names it, for a runner whose
-    configuration names it to take in the stream its host maps it to (the user's ruling of 2026-11-01), the bolt's priority, its
-    intent, the planner as recipient, its brief, and the launches of its After work; a launch standing whose After no longer names
+    configuration names it to take in the stream its host maps it to (the user's ruling of 2026-11-01), the bolt's priority
+    (priority, where the caller numbered the bolt itself, else as its requests set it, priority_of, None where they set
+    none, which plan.reach_places refuses), its intent, the planner as recipient, its brief, and the launches of its After work; a launch standing whose After no longer names
     its After work's standing launches, one of them dropped, launched anew or gone from its After, is dropped and the
     work launched again, so no place waits on a launch that will never land; and each unit's or chore's launch on the
     bolt whose work has left it is dropped, every launch on the bolt's branch, its fixes' too, once the bolt has left
@@ -1167,6 +1168,7 @@ def reach(plan, requests, bolt, label, again=()):
     drops = [r for r in on if newest[r.get("Work")] is not r or r.get("Work") in fresh or r in left]
     out = [("drop", r.get("Work"), {"Of": r.get("Request")}) for r in drops]
     n, num = next_request(requests) + len(out), {}
+    priority = priority_of(requests, bolt) if priority is None else priority
     for u in order:
         wk = names[u.name()]
         if wk not in fresh:
@@ -1175,7 +1177,7 @@ def reach(plan, requests, bolt, label, again=()):
         num[u.name()], n = n, n + 1
         out.append(("launch", wk, {
             "Repo": plan.bolt(bolt).get("Repo"), "Kind": "chore" if u.get("Kind") == "chore" else "change", "Name": u.name(),
-            "Base": base, "Priority": priority_of(requests, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
+            "Base": base, "Priority": priority, "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
             "After": [num[d] for d in u.all("After") if d in num], "Brief": brief(u)}))
     return out
 
@@ -1347,7 +1349,7 @@ def fix_launch(plan, requests, bolt, label, name, words):
     """The launch crew fix <bolt> <name> "<words>" appends for a fix on a started bolt (Decision 10), as (act, work, its
     fields as plan.request takes them), or (None, why): a place of the fix kind named <bolt>--<name>, cut from the
     bolt's branch, in the bolt's repository for a runner whose configuration names it to take, as reach launches its
-    units, with the bolt's priority and its drive's (label) intent, the planner as recipient, the fix's words as its
+    units, with the bolt's priority as its requests set it (priority_of) and its drive's (label) intent, the planner as recipient, the fix's words as its
     brief and nothing held. Refused while a launch of that fix stands on the bolt, merged or not, since the name is in
     use there (teams.3)."""
     work, base = f"fix/{bolt}/{name}", f"bolt/{bolt}"

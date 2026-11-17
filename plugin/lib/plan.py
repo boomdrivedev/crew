@@ -2577,17 +2577,23 @@ def crossed_bolt(plan, bolt):
     return b is not None and b.get("Path") == "flume"
 
 
-def reach_places(fleet, w, bolt, again=()):
+def reach_places(fleet, w, bolt, again=(), priority=None):
     """A plan write's own act on a started bolt (Decisions 5 to 7 of teams-cross-to-flume-as-their-bolts-land): the
     requests runner.reach decides, its launches, drops and launches anew, each in the bolt's repository for the runner
     whose configuration names it to take (the user's ruling of 2026-11-01), appended in the write's own commit
-    (request), each launch at the bolt's priority as its requests set it (runner.priority_of); again the work launched
-    anew. It re-sets no priority, so a drop, a close or work added re-sets none of any bolt's
-    (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3). Returns each launch appended, as (its number, its work)."""
+    (request), each launch at the bolt's priority, priority where the caller numbered the bolt, as a start does, else as
+    its requests set it (runner.priority_of), refused naming the bolt where they set none, which no start leaves, since
+    crew launches nothing at a priority it can't read (read.1); again the work launched anew. It re-sets no priority, so a
+    drop, a close or work added re-sets none of any bolt's (a-bolt-keeps-its-priority-until-it-is-moved, Decision 3).
+    Returns each launch appended, as (its number, its work)."""
     b = w.plan.bolt(bolt)
     b is None or started(b) or fail(f"bolt {bolt} is not started, so nothing of its work is launched")
     launched = []
-    for act, work, given in runner.reach(w.plan, requests_of(w).recs("Request"), bolt, w.label, again):
+    asked = runner.reach(w.plan, requests_of(w).recs("Request"), bolt, w.label, again, priority)
+    unset = [work for act, work, given in asked if act == "launch" and given.get("Priority") is None]
+    not unset or fail(f"crew can't launch {', '.join(unset)}: no request of bolt {bolt}'s sets its priority, which its start "
+                      "sets with its base place's launch, so the priority its work launches at can't be read")
+    for act, work, given in asked:
         n = request(w, act, work, **given)
         if act == "launch":
             launched.append((n, work))
@@ -5676,14 +5682,15 @@ def op_bolt_start(ctx, a):
             have = requests_of(w).recs("Request")
             numbers = runner.numbering(w.plan, have, a.bolt)
             reprioritise(w, numbers)
-            asked = [runner.bolt_launch(w.plan, a.bolt, w.label, numbers.get(a.bolt, runner.priority_of(have, a.bolt)))]
+            seen["number"] = numbers.get(a.bolt, runner.priority_of(have, a.bolt))
+            asked = [runner.bolt_launch(w.plan, a.bolt, w.label, seen["number"])]
         if getattr(a, "stays", False):
             s.set("Stays", "yes")
         for act, work, given in asked:
             n = request(w, act, work, **given)
             if act == "launch":
                 seen["bolt"] = n
-        seen["launched"] = reach_places(fleet, w, a.bolt)
+        seen["launched"] = reach_places(fleet, w, a.bolt, priority=seen.get("number"))
         return [a.bolt]
 
     def after(repo, sha):

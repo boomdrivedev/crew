@@ -1542,6 +1542,31 @@ class TestPriorities:
         apply(w, "bolt order z --before y", ctx=known(w, fleet=self.FLEET))
         assert len(plan.Plan(w.files["requests.rec"]).recs("Request")) == n + 2
 
+    def test_a_drop_a_close_or_work_added_re_sets_no_other_bolt(self, monkeypatch):
+        """x, y and z started: bolt drop y appends no priority for x or z; with y gone from the plan, as a close leaves
+        it, bolt order x --first appends none; and unit b added to x launches at x's priority and appends none. A started
+        bolt whose requests set no priority has nothing launched at one crew can't read."""
+        from facts import apply, known
+        monkeypatch.setenv("CREW_AGENT", BY)
+        for do in ('bolt drop y "Not now."', None, 'unit add b "Build b." --bolt x'):
+            w = self.write(("x", None), ("y", None), ("z", None))
+            for b in ("x", "y", "z"):
+                self.start(w, b)
+            n = len(self.acts(w))
+            if do is None:
+                w.plan.remove(w.plan.item("y-unit"))
+                w.plan.remove(w.plan.bolt("y"))
+                do = "bolt order x --first"
+            apply(w, do, ctx=known(w, fleet=self.FLEET))
+            new = plan.Plan(w.files["requests.rec"]).recs("Request")[n:]
+            assert "priority" not in [r.get("Act") for r in new], do
+            if do.startswith("unit add"):
+                assert [(r.get("Act"), r.get("Work"), r.get("Priority")) for r in new] == [("launch", "unit/b", "1000000000000")]
+        w = self.write(("x", "flume"))
+        with pytest.raises(Refusal, match=r"^crew can't launch unit/x-unit: no request of bolt x's sets its priority, "):
+            plan.reach_places(self.FLEET, w, "x")
+        assert "requests.rec" not in w.files
+
     def test_a_reorder_on_a_branch_with_no_requests_writes_none(self):
         from facts import apply, known
         w = self.write(("x", None), ("y", None))

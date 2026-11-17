@@ -61,11 +61,12 @@ def given(*bolts, work=(), files=None, runners=None):
 
 
 def start(w, bolt):
-    """What a start's change function does for the bolt's pieces after its base place's launch (plan.op_bolt_start;
-    runner.bolt_launch, test_runner.py's TestBoltLaunch): Path: flume set, no Team, and the bolt's work launched in its
-    repository (plan.reach_places)."""
+    """What a start's change function does for the bolt's pieces (plan.op_bolt_start; runner.bolt_launch, test_runner.py's
+    TestBoltLaunch), its base place's launch left out: Path: flume set, no Team, and the bolt's work launched in its
+    repository at the number the start gives it (runner.numbering; plan.reach_places)."""
     w.plan.bolt(bolt).set("Path", "flume")
-    return plan.reach_places(FLEET, w, bolt)
+    have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
+    return plan.reach_places(FLEET, w, bolt, priority=runner.numbering(w.plan, have, bolt).get(bolt))
 
 
 class TestStart:
@@ -94,13 +95,15 @@ class TestStart:
         assert requests(w)[0]["Brief"] == "Build c."
 
     def test_a_third_bolt_started_has_its_launches_follow_the_requests_already_written(self):
-        """x and y are started, each with work launched, and z is started: z is launched, nothing refused for x and y."""
+        """x and y are started, each with work launched, and z is started: z is launched below them, nothing refused for x
+        and y and no priority of theirs re-set."""
         w = given(("x", None, None), ("y", None, None), ("z", None, None),
                   work=[unit("a"), unit("b", bolt="y"), unit("c", bolt="z")])
         start(w, "x")
         start(w, "y")
-        assert start(w, "z") == [(4, "unit/c")]
-        assert [r["Act"] for r in requests(w)] == ["launch", "launch", "priority", "launch", "priority", "priority"]
+        assert start(w, "z") == [(3, "unit/c")]
+        assert [r["Act"] for r in requests(w)] == ["launch", "launch", "launch"]
+        assert [r["Priority"] for r in requests(w)] == ["1000000000000", "999999000000", "999998000000"]
 
     def test_a_start_with_no_runner_for_the_drive_is_refused_naming_it(self):
         """The state repository holds no madswan/runner/<host> at all: nothing would take the bolt's work."""
