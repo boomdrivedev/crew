@@ -1041,7 +1041,7 @@ def raise_next_step(fleet, label, env, k=None):
     for x in envs:
         due, open_ = step_due(entries(label), acts.entries(label), x)
         if open_:
-            print(f"card {open_} is open: the next step's card on {x} is raised when it closes")
+            print(f"card {open_} is open: the next step's card is raised when it closes")
         elif due:
             raised = raise_step(fleet, {"label": label, "key": due["row"]}, acts) or raised
     return raised

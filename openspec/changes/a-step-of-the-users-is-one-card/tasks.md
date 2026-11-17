@@ -32,5 +32,5 @@ Work the tasks in order, from the place's root. Before the first logic check, sy
 
 ## 6. Through the command, the brief and the docs
 
-- [ ] 6.1 Through `crew ops` on the stubs, an offer waiting on a `before` step posts no deploy card, and two hosts' records of the step post one card. `approve` is refused naming that card, and `settle` records the step done on both, closes the card and posts the deploy's approve (Task notes 6.1). Verify `tests/suite t-journey-ops` ends with "0 failed".
+- [x] 6.1 Through `crew ops` on the stubs, an offer waiting on a `before` step posts no deploy card, and two hosts' records of the step post one card. `approve` is refused naming that card, and `settle` records the step done on both, closes the card and posts the deploy's approve (Task notes 6.1). Verify `tests/suite t-journey-ops` ends with "0 failed".
 - [ ] 6.2 Main-level ops's brief says a deploy waiting on the user's step has no card until it is done, and that the user's answer on a step's card is `crew ops settle`. README, the skill and the usage give `settle` and drop `--ticked` (design, Decisions 6 and 8; Task notes 6.2). Verify `tests/suite t-briefs t-docs t-help` ends with "0 failed".
