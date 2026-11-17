@@ -1587,26 +1587,32 @@ def proposal_card(f):
               if len(said) <= room or k == 1)
     title = f"Plan change to {to}" + (f": {counts}" if counts else "")
     new, made, units, rows = new_units(argvs), {a.unit: a for _, a in proposal_rows(argvs)}, {}, []
+    starting = {a.bolt for a in argvs if (a.cmd, a.sub) == ("bolt", "start")}
     for a in argvs:  # the new units and the dropped ones, in the order the commands name them, for the face
         if a.cmd not in ("unit", "chore") or a.unit in units:
             continue
         if made.get(a.unit) is a:
             units[a.unit] = a
-            moved = a.sub == "move"
-            src = d["came_from"].get(a.unit)
-            rows.append({"id": f"add:{a.unit}", "unit": a.unit, "is": "new", "ticked": True,
-                         "label": f"Move {a.unit} in" if moved else f"Add {a.unit}", "detail": d["intent"].get(a.unit) or "",
-                         "consequence": f"Cleared: stays in {'the queue' if src is None else 'bolt ' + src}; the rest still applies"
-                         if moved else "Cleared: not added; the rest still applies"})
+            # Started as plan.started reads it, on the plan at the tip: the plan the commands leave is built with no runner.
+            to, was, now = a.bolt or None, f["before"].item(a.unit), f["after"].item(a.unit)
+            tip = f["before"].bolt(to) if to else None
+            words = new_row_words(a.sub, a.unit, to, a.repo if a.sub == "add" else was.get("Repo") if was else None,
+                                  d["came_from"].get(a.unit), tip is not None and tip.get("Path") == "flume", to in starting,
+                                  now.all("After") if now else [])
+            rows.append({"id": f"add:{a.unit}", "unit": a.unit, "is": "new", "ticked": True, "label": words["go"],
+                         "detail": d["intent"].get(a.unit) or "", **{k: words[k] for k in ("went", "leave", "left")}})
         elif a.sub == "drop" and a.unit not in made:
             units[a.unit] = a
     session = len(new) > CARD_NEW
     shape = proposal_form(argvs)
     also = bool(d["dropped"] or d["amended"])  # it drops or amends a unit, which no box asks
 
-    def option(r):
+    def option(r, box=True):
+        """A row's choice: on a box, its consequence what happens kept and, whole after "Left out, ", what happens not;
+        a lone unit's going ahead, what happens kept alone."""
+        left = " Left out, " + r["left"]
         return {"id": r["id"], "label": cut(r["label"], LABEL), "detail": by_words(r["detail"], DETAIL),
-                "consequence": by_words(r["consequence"], DETAIL)}
+                "consequence": by_words(r["went"], DETAIL - len(left)) + left if box else by_words(r["went"], DETAIL)}
     if shape == "approve":
         how = ("Hold to apply it whole; to keep a unit it drops or amends, decline with a note." if also and not session
                else "Hold to apply it whole.")

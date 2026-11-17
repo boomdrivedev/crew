@@ -208,7 +208,8 @@ class TestProposals:
         _, b = proposal_card(*self.DOS)
         c = b["card"]
         assert [(o["id"], o["detail"], o["consequence"]) for o in c["options"]] == [
-            (f"add:{u}", f"Chore: {said}", "Cleared: not added; the rest still applies")
+            (f"add:{u}", f"Chore: {said}", "It joins bolt upkeep, which has not started, and is built once upkeep starts. "
+                                            "Left out, it is not added to the plan.")
             for u, said in (("bump", "Biome follows the shell."), ("pin", "Pin the lock."), ("tidy", "Tidy the docs."))]
         assert c["recommendedIds"] == ["add:bump", "add:pin", "add:tidy"]
         assert "CHORE  bump" in "\n".join(c["artifacts"][-1]["lines"])

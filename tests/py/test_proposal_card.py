@@ -8,7 +8,7 @@ import zlib
 
 import pytest
 
-from facts import FLEET, STANDING, FactsWrite, apply, keeping, known, plan_text
+from facts import FLEET, STANDING, FactsWrite, apply, based, keeping, known, plan_text
 
 import cards
 import plan
@@ -73,7 +73,8 @@ class TestBuiltDropAmendAdd:
     def test_it_is_one_checkbox_list_of_its_new_units_ticked_with_no_box_for_the_drop_or_the_amendment(self):
         c = self.B["card"]
         assert (c["kind"], c["intent"]) == ("multi", "decide") and "approve" not in c and "questions" not in c
-        assert [(o["id"], o["label"]) for o in c["options"]] == [("add:e-fifth", "Add e-fifth"), (f"add:{LONG}", f"Add {LONG}")]
+        assert [(o["id"], o["label"]) for o in c["options"]] == [("add:e-fifth", "Add e-fifth for later"),
+                                                                     (f"add:{LONG}", f"Add {LONG} for later")]
         assert c["recommendedIds"] == ["add:e-fifth", f"add:{LONG}"] and c["multi"] == {"min": 0, "max": 2}
         assert c["options"][0]["detail"] == "The fifth thing is built."
         assert [(b["unit"], b["is"], b["ticked"]) for b in self.B["boxes"]] == [("e-fifth", "new", True), (LONG, "new", True)]
@@ -286,10 +287,46 @@ def test_a_proposals_card_form_is_read_from_its_commands_alone_as_its_card_is_bu
 
 
 def test_a_move_into_a_bolt_is_a_box_to_move_it_in():
-    c = built(8, "The moving page belongs with the deploys.", "unit move m-move deploys")["card"]
-    assert c["title"] == "Plan change to pages and deploys: 1 new, 1 moved"
-    assert c["options"][0]["label"] == "Move m-move in"
-    assert c["options"][0]["consequence"] == "Cleared: stays in bolt pages; the rest still applies"
+    """A move beside an add, so a list: its box moves it in for later, deploys not started, and left out it stays where
+    it stood."""
+    c = built(8, "The moving page belongs with the deploys.", "unit move m-move deploys",
+              'unit add e-fifth "The fifth thing is built." --bolt deploys')["card"]
+    assert (c["kind"], c["title"]) == ("multi", "Plan change to pages and deploys: 2 new, 1 moved")
+    assert c["options"][0]["label"] == "Move m-move in for later"
+    assert c["options"][0]["consequence"] == ("It moves into bolt deploys, which has not started, and is built once deploys "
+                                              "starts. Left out, it stays in bolt pages.")
+
+
+def test_a_list_box_says_both_outcomes(monkeypatch):
+    """plan-proposals "Both outcomes in a list": an add to a started bolt, its base place launched as its start leaves
+    it (based), and a move from bolt pages into it."""
+    monkeypatch.setenv("CREW_AGENT", "chuck@mac-studio")
+
+    def started():
+        return FactsWrite(plan_text(bolts=[("deploys", KIT, True), ("pages", KIT, None)],
+                                    units=[("a-first", KIT, "deploys", []), ("m-move", KIT, "pages", [])]))
+    dos = ('unit add b-new "The new thing." --bolt deploys', "unit move m-move deploys")
+    c = cards.proposal_card(dict(n=12, state="open", case="Both join the running bolt.", before=started().plan,
+                                 after=apply(based(started()), *dos).plan, argvs=[plan.do_args("wldn", d) for d in dos], session=None))["card"]
+    assert [(o["label"], o["consequence"]) for o in c["options"]] == [
+        ("Start b-new now", "It joins bolt deploys, which is running, and is built now. Left out, it is not added to the plan."),
+        ("Start m-move now", "It moves into bolt deploys, which is running, and is built now. Left out, it stays in bolt pages.")]
+
+
+def test_a_box_too_long_keeps_its_left_out_whole():
+    """plan-proposals "Names too long for both": what happens kept is cut by whole words; "Left out," and what follows
+    it stay whole, the consequence within what Pending You takes."""
+    to, src = "a-bolt-" + "whose-name-runs-on-" * 4 + "to", "the-bolt-" + "it-stood-in-" * 5 + "first"
+
+    def long():
+        return FactsWrite(plan_text(bolts=[(to, KIT, None), (src, KIT, None)],
+                                    units=[("a-first", KIT, to, []), ("m-move", KIT, src, [])]))
+    dos = (f'unit add b-new "The new thing." --bolt {to}', f"unit move m-move {to}")
+    c = cards.proposal_card(dict(n=13, state="open", case="Long names.", before=long().plan, after=apply(long(), *dos).plan,
+                                 argvs=[plan.do_args("wldn", d) for d in dos], session=None))["card"]
+    moved = c["options"][1]["consequence"]
+    assert moved.endswith(f"… Left out, it stays in bolt {src}.") and len(moved) <= cards.DETAIL
+    assert all(len(o["consequence"]) <= cards.DETAIL for o in c["options"])
 
 
 class TestNewRowWords:
