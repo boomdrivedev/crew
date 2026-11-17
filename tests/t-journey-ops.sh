@@ -9,11 +9,12 @@
 # entries as it runs; an operation's states are recorded and crew ops steps gives each one's latest, one the user is to
 # take, or an agent's held for the user's word, a rail row whose card crew raises one at a time, each following the
 # one before, changes in place when its step is recorded again with new words, printing the line that adopts it
-# either way, and closes when it is marked; an offer on a host not signed in stands with no card; main-level ops posts
+# either way, and closes when it is marked, a user's answered through crew ops settle; an offer on a host not signed in stands with no card; main-level ops posts
 # no card under an operations row's key, crew's, and asks under a key of its own; quiet reads the Flume places the
 # drive's runner on the host carries working, and its test slots; an ops command run away from the drive's main level runs there, an offer carrying its files'
-# text and a step its text; and a step the deploy waits on is first on its offer's card, a box to tick, the deployer's
-# record of it has no card of its own, and the word is the card's send with it ticked. Which offer is open, the word, each step's latest state, the rows and their words, each
+# text and a step its text; and an offer waiting on a step of the user's has no card, two hosts' records of that step
+# are one card naming both, the approval is refused naming that card, and crew ops settle records the step done on
+# both, closes the card and raises the deploy's hold-to-approve (record 0070). Which offer is open, the word, each step's latest state, the rows and their words, each
 # card's facts, whether it is posted or changed, which step's card is raised, what a step recorded again or an offer
 # handed again changes, and what a forwarded offer or step carries are logic cases (tests/py/test_ops.py); each step
 # here checks a command's wiring once.
@@ -137,7 +138,7 @@ has "$out" "card op/mac-studio/1 is open: the next step's card is raised when it
 eq "$(py_calls | grep -c '^post_request ')" "1"
 expect_ok crew rail --label swancloud
 has "$out" "an operation after the deploy of mac-studio to ${s2:0:7} (swancloud), yours to do: Restart the herdr server"
-has "$out" "done:   crew ops step mac-studio --to $s2 --key restart-herdr/1 --state done --label swancloud"
+has "$out" "done:   crew ops settle op/mac-studio/1 --state done --label swancloud"
 has "$out" "an operation after the deploy of mac-studio to ${s2:0:7} (swancloud), swancloud-ops's, held for your word: Restart crew's teams."
 lacks "$out" "restart-teams"
 expect_ok dep steps mac-studio --json
@@ -176,7 +177,7 @@ expect_ok dep step mac-studio --key rotate-tailnet-key --state waiting --doer us
 has "$out" "card op/mac-studio/3 is open: the next step's card is raised when it closes"
 expect_ok crew rail --label swancloud
 has "$out" "an operation on mac-studio (swancloud), yours to do: rotate-tailnet-key"
-has "$out" "done:   crew ops step mac-studio --key rotate-tailnet-key --state done --label swancloud"
+has "$out" "done:   crew ops settle op/mac-studio/4 --state done --label swancloud"
 key=$(grep -o 'op/mac-studio/4' <<<"$out" | head -1); [[ -n $key ]] || fail "the operation's row has no op/ key"
 expect_ok dep steps mac-studio --json
 eq "$(jq -r '.[] | select(.key == "rotate-tailnet-key") | "\(.to)|\(.state)"' <<<"$out")" "|waiting"
@@ -184,7 +185,7 @@ eq "$(jq -r '.[] | select(.key == "rotate-tailnet-key") | "\(.to)|\(.state)"' <<
 expect_ok dep step mac-studio --to "$s2" --key restart-crew/1 --state declined
 has "$out" "card op/mac-studio/3: req_stub-"; has "$out" "withdrawn"
 has "$out" "card op/mac-studio/4: req_stub-"
-eq "$(jq -r '.title' <<<"$(py_arg post_request)")" "After mac-studio's deploy: rotate-tailnet-key"
+eq "$(jq -r '.title' <<<"$(py_arg post_request)")" "rotate-tailnet-key, on mac-studio"
 expect_ok dep step mac-studio --key rotate-tailnet-key --state declined
 has "$out" "card op/mac-studio/4: req_stub-"; has "$out" "withdrawn"
 expect_ok crew rail --label swancloud; lacks "$out" "yours to do"; lacks "$out" "held for your word"
@@ -251,27 +252,52 @@ has "$(grep "ssh $box .*ops step" "$CREW_TEST_LOG")" "--text -"; lacks "$(grep "
 eq "$(runs "$box" wldn | grep -c "^Text: Restart crew's teams. - why: It ends a stage mid-unit.$")" "1"
 ok "an ops command run away from the drive's main level is run there, an offer carrying its files' text and a step its text"
 
-# A step the deploy waits on (swancloud record 0038, record 0059), handed marked before by the deployer.
+# A step the deploy waits on (swancloud record 0038, record 0070), handed marked before by the deployer, and recorded by
+# two hosts' deployers under one key.
 printf "step\t1\tuser\tbefore\tmacbook-pro\tThe job points at deneb, which holds no repository until the disk is there.\tMove the Archives disk from mac-studio to deneb.\nstep\t2\tuser\t\tmacbook-pro\tOnly you hold the vault.\trotate the kanidm admin password\n" > "$T/before.txt"
 : > "$CREW_TEST_LOG"
 expect_ok dep offer macbook-pro --from none --to "$s1" --steps "$T/before.txt"
-eq "$(jq -c '[.kind, .highStakes, [.options[].id], .artifacts[0].title, .artifacts[1].title, .artifacts[2].title]' <<<"$(py_arg post_request)")" \
-  '["multi",true,["before:1","deploy"],"Before the deploy: 1 step, yours","What'"'"'s in it","After the deploy: 1 step, 1 yours"]'
-eq "$(runs | grep -B12 -A12 '^Key: deploy/macbook-pro$' | grep -c '^Form: boxes$')" "1"
-printf 'Move the Archives disk\nfrom mac-studio to deneb.\n' > "$T/move.txt"
+has "$out" 'card deploy/macbook-pro: it waits on your step "Move the Archives disk from mac-studio to deneb.", which its deployer has not recorded on macbook-pro yet'
+eq "$(py_calls | grep -c '^post_request ')" "0"
+printf 'Move the Archives disk\nfrom mac-studio to deneb.\n- why: The job points at deneb, which holds no repository until the disk is there.\n' > "$T/move.txt"
 : > "$CREW_TEST_LOG"
 expect_ok dep step macbook-pro --to "$s1" --key 9c1f0e2a7b3d --state waiting --doer user --text "$T/move.txt"
-has "$out" "step 9c1f0e2a7b3d: the deploy of macbook-pro offered waits on it, so it is ticked on deploy/macbook-pro's card"
-eq "$(py_calls | grep -c '^post_request ')" "0"
+has "$out" "step 9c1f0e2a7b3d: the deploy of macbook-pro offered waits on it, so the deploy's card is raised once the step is done"
+has "$out" "card op/macbook-pro/1: req_stub-"
+disk=$(grep -o 'card op/macbook-pro/1: req_stub-[0-9]*' <<<"$out" | head -1 | cut -d' ' -f3)
+eq "$(py_calls | grep -c '^post_request ')" "1"
 eq "$(runs | grep -B12 -A12 '^Key: 9c1f0e2a7b3d$' | grep -c '^When: before$')" "1"
+: > "$CREW_TEST_LOG"
+expect_ok dep step mac-studio --to "$s3" --key 9c1f0e2a7b3d --state waiting --doer user --text "$T/move.txt"
+has "$out" "card op/macbook-pro/1: $disk changed, now version 2"
+eq "$(py_calls | grep -c '^post_request ')" "0"
+eq "$(jq -c '[.changeNote, .title]' <<<"$(py_arg update_request)")" \
+  '["mac-studio waits on it too","Move the Archives disk from mac-studio to deneb, so macbook-pro and mac-studio can deploy"]'
+eq "$(runs | grep -c "^Heads: macbook-pro@$s1 mac-studio@$s3\$")" "1"
 expect_ok crew rail --label swancloud
-has "$out" "once the step of yours it waits on is ticked on it"; lacks "$out" "yours to do: Move the Archives disk"
-expect_fail 'the deploy of macbook-pro to aaaaaaa waits on your step 1 ("Move the Archives disk from mac-studio to deneb."), not ticked' \
+has "$out" 'deploy macbook-pro (swancloud) to aaaaaaa, from nothing deployed: it waits on your step "Move the Archives disk from mac-studio to deneb.", asked on op/macbook-pro/1'
+has "$out" "done:   crew ops settle op/macbook-pro/1 --state done --label swancloud"
+lacks "$out" "op/mac-studio/5"
+ok "an offer waiting on a step of the user's posts no card; two hosts' records of the step are one card naming both, its heads recorded, and the deploy's row names it"
+
+expect_fail 'the deploy of macbook-pro to aaaaaaa waits on your step "Move the Archives disk from mac-studio to deneb.", asked on op/macbook-pro/1' \
   dep approve macbook-pro --to "$s1"
+has "$(runs)" "Refused: the deploy of macbook-pro to aaaaaaa waits on your step"
+expect_fail "unrecognized arguments: --ticked 1" dep approve macbook-pro --to "$s1" --ticked 1
 rc=0; dep word macbook-pro >/dev/null 2>&1 || rc=$?; eq "$rc" "1"
-expect_ok dep approve macbook-pro --to "$s1" --ticked 1
-has "$out" "the deploy of macbook-pro to ${s1:0:7} is approved, its step 1 recorded done"
+echo '{"answer": {"done": true}}' > "$stub/answered/$disk.json"
+: > "$CREW_TEST_LOG"
+expect_ok dep settle op/macbook-pro/1 --state done
+has "$out" "step op/macbook-pro/1: recorded done on macbook-pro@$s1 and mac-studio@$s3"
+has "$out" "card op/macbook-pro/1: $disk closed"
+eq "$(jq -r .outcome <<<"$(py_arg ack_answer)")" "Done."
+has "$out" "card deploy/macbook-pro: req_stub-"
+eq "$(jq -c '[.kind, .approve.risk, .follows, .artifacts[0].title, .artifacts[0].lines[-1]]' <<<"$(py_arg post_request)")" \
+  "[\"approve\",\"high\",\"$disk\",\"Before the deploy: 1 step, yours, done\",\"   done\"]"
+expect_ok dep steps macbook-pro --json; eq "$(jq -r '[.[] | "\(.key) \(.state)"] | join(", ")' <<<"$out")" "9c1f0e2a7b3d done"
+expect_ok dep steps mac-studio --json; eq "$(jq -r '.[] | select(.key == "9c1f0e2a7b3d") | .state' <<<"$out")" "done"
+expect_fail "no step's row or card holds op/deneb/99" dep settle op/deneb/99 --state done
+expect_ok dep approve macbook-pro --to "$s1"
+has "$out" "the deploy of macbook-pro to ${s1:0:7} is approved"
 expect_ok dep word macbook-pro; eq "$out" "$s1"
-expect_ok dep steps macbook-pro --json
-eq "$(jq -r '[.[] | "\(.key) \(.state)"] | join(", ")' <<<"$out")" "9c1f0e2a7b3d done"
-ok "a step the deploy waits on is first on its offer's card, a box to tick beside the deploy's; the deployer's record of it is marked and has no card of its own; an approval with it open is refused naming it, and the card's send with it ticked records it done and gives the word"
+ok "the approval is refused naming the step's card and ticks are refused; crew ops settle records the step done on both hosts, closes its card once and posts the deploy's hold-to-approve following it, and the approval then gives the word"

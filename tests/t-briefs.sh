@@ -67,6 +67,12 @@ done
 for r in design planner reviewer ops operator; do role_runs wldn $r standing; done
 ok "a brief names crew role start and end where its drive runs the role on-demand, and not where it stands, every brief filled for a drive running all five on-demand"
 
+expect_ok crewpy brief wldn main-ops
+has "$out" "run the row's \`done\` or \`decline\` command, \`crew ops settle\`"
+has "$out" "has no card until the step is done"; has "$out" "One card asks a step however many hosts wait on it"
+lacks "$out" "--ticked"
+ok "main-level ops's brief says a deploy waiting on the user's step has no card until the step is done, one card asks a step however many hosts wait on it, and the user's answer on it is crew ops settle"
+
 # A runner host's teams file names its kept repositories (record 0061; Decision 7 of
 # a-kept-repositorys-folder-is-the-runners-container): built there, the design agent's brief names its blueprints
 # checkout and each kit's at the runner's view with the runner's container as its folder, and the operator's names

@@ -1157,55 +1157,23 @@ def landings_card(f):
     return out
 
 
-def deploy_boxes(numbers):
-    """The open steps a deploy waits on as its card's step boxes (a-deploy-card-is-raised-whatever-its-steps): numbers,
-    the open steps' numbers in the card's order, as a list of lists of them, each step in exactly one, in order. Four
-    or fewer have a box each; past four, the first three have a box each and the fourth holds every other. One list
-    holds BOXES options, the deploy's among them, and Pending You refuses a card of questions carrying highStakes, so
-    a deploy's card, held to send, is one list whatever its steps: never more than BOXES - 1 step boxes."""
-    numbers = list(numbers)
-    if len(numbers) < BOXES:
-        return [[n] for n in numbers]
-    return [[n] for n in numbers[:BOXES - 2]] + [numbers[BOXES - 2:]]
-
-
-def deploy_form(f):
-    """The form of a deploy's card from its facts (record 0059): "boxes" while a step the deploy waits on is open, a
-    box to tick for each and one for the deploy; None, a hold-to-approve, otherwise. Pending You changes no card's
-    kind, so a card that moves from one to the other is followed rather than changed (ops.raise_deploy)."""
-    return "boxes" if any(w.get("state") != "done" for w in f.get("waited") or []) else None
-
-
 def deploy_card(f):
-    """A deploy's card (record 0031 §5, plan.14): an approval of risk high naming the environment and the commit; its
-    summary counting the landings since the environment's last deploy, or saying it is the first deploy, which carries
-    all of main, and naming the environments before and after it; on its face the kit's release notes as the deployer
-    hands them, as inline Markdown, crew writing none, or the landings' subjects when it hands none, saying so, and the
-    after-deploy steps with their doers; the landings' subjects in its details. A deploy that waits on steps of the
-    user's (swancloud record 0038, record 0059) says so first, and shows them first on its face, before the notes, each
-    with why or that it is done; while one is open it is boxes to tick carrying highStakes and what follows a yes
-    (deploy_form), a box for each open step, `before:<n>`, then one for the deploy, `deploy`, none ticked, its send
-    with every box ticked the word. It is always one list of at most BOXES and never questions, whatever its steps:
-    Pending You refuses a card of questions carrying highStakes, on the card or on any question, and a deploy is not
-    undone, so its card is held to send. Past four open steps the fourth box holds every open step past the third
-    (deploy_boxes), `before:` and their numbers joined by `-`, and the summary says which steps share it. f:
-    env, head, base (what the environment runs) or None, landings ([{pr, subject}], oldest first), landings_why (why
-    they can't be read) or None, notes (Markdown) or None, release (the notes' name) or None, steps ([{n, text, doer,
-    held}]), waited ([{n, text, why, state}], ops.waited_on), before ([env]), after ([{env, policy}]), follows. Also
-    handed back: its form, which the run record keeps on the card's post and change."""
+    """A deploy's card (record 0031 §5, plan.14 as record 0070 amends it): the hold-to-approve of risk high naming the
+    environment and the commit, always, and no boxes, since crew raises it only once each step of the user's the deploy
+    waits on is done; its summary counting the landings since the environment's last deploy, or saying it is the first
+    deploy, which carries all of main, and naming the environments before and after it; on its face the kit's release
+    notes as the deployer hands them, as inline Markdown, crew writing none, or the landings' subjects when it hands
+    none, saying so, and the after-deploy steps with their doers; the landings' subjects in its details. A deploy that
+    waited on steps of the user's (swancloud record 0038) says so first, each done, and lists them first on its face,
+    before the notes. f: env, head, base (what the environment runs) or None, landings ([{pr, subject}], oldest
+    first), landings_why (why they can't be read) or None, notes (Markdown) or None, release (the notes' name) or None,
+    steps ([{n, text, doer, held}]), waited ([{n, text, why, state}], ops.waited_on), before ([env]), after ([{env,
+    policy}]), follows."""
     env, head, landings, steps = f["env"], f["head"][:7], list(f.get("landings") or []), list(f.get("steps") or [])
     waited = list(f.get("waited") or [])
-    left = [w for w in waited if w.get("state") != "done"]
     why, first = f.get("landings_why"), not f.get("base")
     since = f"in the first deploy to {env}" if first else f"since {env}'s last deploy ({f['base'][:7]})"
-    ahead = f"It waits on {plural(len(waited), 'step')} of yours before the deploy" if waited else ""
-    boxes = deploy_boxes([w["n"] for w in left])
-    shared = next((b for b in boxes if len(b) > 1), None)
-    tick = (f"tick each box once its steps are done, steps {joined(shared)} sharing the fourth, and the deploy" if shared
-            else "tick each once it is done, and the deploy")
-    said = ([ahead + (f", {len(waited) - len(left)} done" if len(left) < len(waited) else "")
-             + f": {tick}; your send with every box ticked is the word to deploy, and a box left unticked deploys nothing."]
-            if left else [ahead + ", each done."] if waited else [])
+    said = [f"It waited on {plural(len(waited), 'step')} of yours, each done."] if waited else []
     said += [f"Which landings it carries {since} can't be read: {why}." if why else
             f"The first deploy to {env}, carrying all of main up to {head}." if first else
             f"{plural(len(landings), 'landing')} since {env}'s last deploy ({f['base'][:7]})."]
@@ -1233,37 +1201,12 @@ def deploy_card(f):
                                [(f"{s['n']}  {s['text']}", "you" if s["doer"] == "user" else
                                  f"{s['doer']}, held for your word" if s.get("held") else s["doer"]) for s in steps]))
     if waited:
-        shown.insert(0, text_list(f"Before the deploy: {plural(len(waited), 'step')}, yours", f"deploy-{env}-before.txt",
-                                  [(f"{w['n']}  {w['text']}",) + (("done",) if w.get("state") == "done" else
-                                                                  (w["why"],) if w.get("why") else ()) for w in waited]))
+        shown.insert(0, text_list(f"Before the deploy: {plural(len(waited), 'step')}, yours, done", f"deploy-{env}-before.txt",
+                                  [(f"{w['n']}  {w['text']}", "done") for w in waited]))
     background = f"Landings since {env}'s last deploy:\n" + "\n".join(subjects) if subjects else ""
-    then = f"{env} deploys only on your word, and a deploy is not undone."
-    if not left:
-        return built(f"deploy/{env}", f"Deploy main {head} to {env}", " ".join(said), background, (), shown, f.get("follows"),
-                     head=f["head"], kind="approve", intent="approve", approve=high(f"Deploy {head} to {env}"),
-                     recommendedIds=["approve"], rationale=then)
-    by_n = {w["n"]: w for w in left}
-
-    def box(ns):
-        if len(ns) == 1:
-            w = by_n[ns[0]]
-            return {"id": f"before:{w['n']}", "label": cut(f"Done: {w['n']}. {' '.join(w['text'].split())}", LABEL),
-                    "detail": by_words(w.get("why") or w["text"], DETAIL),
-                    "consequence": by_words("Ticked: you have done it, and it is recorded done with your word.", DETAIL)}
-        return {"id": "before:" + "-".join(ns), "label": by_words(f"Done: steps {joined(ns)}", LABEL),
-                "detail": by_words("; ".join(f"{n}. {' '.join(by_n[n]['text'].split())}" for n in ns), DETAIL),
-                "consequence": by_words("Ticked: you have done each of them, and each is recorded done with your word.", DETAIL)}
-    options = [box(ns) for ns in boxes]
-    options.append({"id": "deploy", "label": cut(f"Deploy {head} to {env}", LABEL),
-                    "detail": by_words("Your word to deploy, once every step above is ticked.", DETAIL),
-                    "consequence": by_words(f"Sent with every box ticked: {env} is deployed {head} at its deployer's next run. "
-                                            "A box left unticked deploys nothing.", DETAIL)})
-    shape = dict(kind="multi", intent="decide", options=options, multi={"min": 0, "max": len(options)}, recommendedIds=[],
-                 rationale=then, highStakes=True)
-    out = built(f"deploy/{env}", f"Deploy main {head} to {env}", " ".join(said), background, (), shown, f.get("follows"),
-                head=f["head"], **shape)
-    out["form"] = deploy_form(f)
-    return out
+    return built(f"deploy/{env}", f"Deploy main {head} to {env}", " ".join(said), background, (), shown, f.get("follows"),
+                 head=f["head"], kind="approve", intent="approve", approve=high(f"Deploy {head} to {env}"),
+                 recommendedIds=["approve"], rationale=f"{env} deploys only on your word, and a deploy is not undone.")
 
 
 QUIET = {"quiet": ("When the host is quiet", "No stage is cut; it could be hours"),
@@ -1279,44 +1222,85 @@ def step(words, command=None, short=None):
     return dict(s, command=command) if command else s
 
 
+def step_tail(f):
+    """The end of a user's step's title (Decision 4): the hosts it releases, "so <hosts> can deploy", for a step a
+    deploy waits on; "after <host>'s deploy" or "after the deploys of <hosts>" when each step names a deploy; "on
+    <hosts>" otherwise; the hosts counted instead, "so 9 hosts can deploy", when naming them would take more than half
+    a title, the summary naming them."""
+    hosts = list(f.get("hosts") or [f["env"]])
+
+    def tail(names, one):
+        if f.get("before"):
+            return f"so {names} can deploy"
+        if f.get("deployed", bool(f.get("to"))):
+            return f"after {names}'s deploy" if one else f"after the deploys of {names}"
+        return f"on {names}"
+    said = tail(joined(hosts), len(hosts) == 1)
+    return said if len(said) <= TITLE // 2 else tail(f"{len(hosts)} hosts", False)
+
+
+def step_said(f):
+    """The one sentence crew adds to a user's step's summary (Decision 4), made of host names alone: which deploys it
+    releases, for a step a deploy waits on, else which hosts it waits on the user on; and, for more than one host,
+    that one answer settles it on each."""
+    hosts = list(f.get("hosts") or [f["env"]])
+    said = (f"It releases the deploy{'s' if len(hosts) > 1 else ''} of {joined(hosts)}" if f.get("before")
+            else f"It waits on you on {joined(hosts)}")
+    return said + ("; one answer settles it on each." if len(hosts) > 1 else ".")
+
+
 def step_card(f):
-    """An after-deploy step's card (record 0031 §5, plan.14): the user's step a `do` with its words, where, each
-    command whole and what is seen when it worked, its Done, Skip and Later the app's own; an agent's step held for
-    the user's word a choice of when, quiet recommended, now or skip, each with its consequence; a deploy waiting at
-    its gate (plan.14) the user's `do` to approve it there, its one step, its where and its link the gate's. Each of
-    its action steps holds to a step's budget (step), and the step's words reach the user whole: in its title, its one
-    action step or its summary when one holds them, else on its face as inline Markdown, so words of any length get
-    their card. f: env, n, text, doer ("user" or the agent), held, why, where, commands, done, gate (the gate's link)
-    or None, to (the commit the step names) or None, consequences ({quiet, now, skip}), follows."""
-    key, head, words = f"op/{f['env']}/{f['n']}", f"After {f['env']}'s deploy: ", f["text"]
+    """A step's card (record 0031 §5, plan.14 as record 0070 amends it): the user's step a `do` with its words, where,
+    each command whole and what is seen when it worked, its Done, Skip and Later the app's own, one card however many
+    hosts wait on it, titled with a plain sentence, the step's words cut at whole words and the hosts it releases
+    (step_tail), its summary the step's why as the deployer wrote it, or its words, then crew's one sentence of the
+    hosts (step_said), no record or rule id of crew's on it; an agent's step held for the user's word a choice of when,
+    quiet recommended, now or skip, each with its consequence; a deploy waiting at its gate (plan.14) the user's `do` to
+    approve it there, its one step, its where and its link the gate's. Each of its action steps holds to a step's
+    budget (step), and the step's words reach the user whole: in its title, its one action step or its summary when
+    one holds them, else on its face as inline Markdown, so words of any length get their card. f: env, n, key (its
+    row's, else op/<env>/<n>), text, doer ("user" or the agent), held, why, where, commands, done, gate (the gate's
+    link) or None, to (the commit the step names) or None, hosts, heads (each step it names, <env>@<to> or <env>),
+    before (a deploy waits on it), deployed (each step names a deploy), consequences ({quiet, now, skip}), follows.
+    Also handed back: its heads, which the run record keeps on the card's post and change."""
+    key, head, words = f.get("key") or f"op/{f['env']}/{f['n']}", f"After {f['env']}'s deploy: ", f["text"]
+    heads = list(f.get("heads") or [f"{f['env']}@{f['to']}" if f.get("to") else f["env"]])
     face = [markdown("The step", f"op-{f['env']}-{f['n']}.md", words)]
     if f.get("gate"):
         link, of = f["gate"], f" of {f['to'][:7]}" if f.get("to") else ""
         said = (f"The deploy{of} to {f['env']} waits at its gate for your approval there. Approving it at the gate is the "
                 "word to deploy; nothing else asks for it.")
-        return built(key, f"Approve the deploy{of} to {f['env']} at its gate", said + (f" {f['why']}" if f.get("why") else ""),
-                     links=[("The gate", link)], follows=f.get("follows"), kind="action", intent="do",
-                     action={"steps": [step(link, short="Open the gate at this card's link and approve the deploy there.")],
-                             "where": link, "done": "The run goes on past its gate."})
+        out = built(key, f"Approve the deploy{of} to {f['env']} at its gate", said + (f" {f['why']}" if f.get("why") else ""),
+                    links=[("The gate", link)], follows=f.get("follows"), kind="action", intent="do",
+                    action={"steps": [step(link, short="Open the gate at this card's link and approve the deploy there.")],
+                            "where": link, "done": "The run goes on past its gate."})
+        return dict(out, heads=heads)
     if f["doer"] == "user":
-        titled = by_words(words, TITLE - len(head))
+        plain = " ".join(words.split())
+        plain = plain[:-1] if plain.endswith(".") else plain
+        tail = ", " + step_tail(f)
+        titled = by_words(plain, TITLE - len(tail))
         steps = ([step(c, c, "Run this command.") for c in f.get("commands") or []]
                  or [step(words, short=prose(words, STEP))])
-        summary = f.get("why") or words
-        whole = (titled == " ".join(words.split()) or [s["text"] for s in steps] == [words]
-                 or (summary == words and prose(words) == prose(words, 10 ** 6)))
+        own = f.get("why") or words
+        own = own.rstrip() + ("" if own.rstrip().endswith((".", "!", "?", "…")) else ".")
+        summary = f"{own} {step_said(f)}"
+        whole = (titled == plain or [s["text"] for s in steps] == [words]
+                 or (not f.get("why") and prose(summary) == prose(summary, 10 ** 6)))
         action = dict({"steps": steps}, **{k: f[k] for k in ("where", "done") if f.get(k)})
-        return built(key, head + titled, summary, artifacts=() if whole else face, follows=f.get("follows"),
-                     kind="action", intent="do", action=action)
+        out = built(key, titled + tail, summary, artifacts=() if whole else face, follows=f.get("follows"),
+                    kind="action", intent="do", action=action)
+        return dict(out, heads=heads)
     said = dict(f.get("consequences") or {})
     options = [{"id": k, "label": label, "consequence": by_words(said.get(k) or then, DETAIL)}
                for k, (label, then) in QUIET.items()]
     asks = ", now or when the host is quiet?"
     titled = by_words(words, TITLE - len(head) - len(asks))
-    return built(key, head + titled + asks,
-                 f"{f['doer']} can do it. " + (f"{f['why']} " if f.get("why") else "") + "Held for your word.",
-                 artifacts=() if titled == " ".join(words.split()) else face, follows=f.get("follows"),
-                 urgency="whenever", kind="choice", intent="decide", options=options, recommendedIds=["quiet"])
+    out = built(key, head + titled + asks,
+                f"{f['doer']} can do it. " + (f"{f['why']} " if f.get("why") else "") + "Held for your word.",
+                artifacts=() if titled == " ".join(words.split()) else face, follows=f.get("follows"),
+                urgency="whenever", kind="choice", intent="decide", options=options, recommendedIds=["quiet"])
+    return dict(out, heads=heads)
 
 
 AMENDED = re.compile(r"^Amended\b[^:.]*:\s*")
@@ -1655,7 +1639,11 @@ def follows_of(kind, thing, entries, by):
     follow nothing. A card lost to its owner is followed by none. A kit's landings card follows the kit's last one in
     by's name only once the user answered it and it closed with rows left that can land (rail-cards "An answered landings
     card closes once each bolt it ticked has landed, been held or stopped"), else nothing. thing: a bolt's landing's {bolt}, a kit's landings card's {kit}, a
-    deploy's {env, head}, a step's {env, key}."""
+    deploy's {env, head, after}, a step's {env, key, answered}. A step's card follows answered, the last card of its
+    own step the user answered, for a host that recorded the step after that answer (record 0070), else the step card
+    raised after its first-recorded environment's last deploy card, counting a card whose Heads name that environment
+    (heads_envs), else that deploy card. A deploy's card follows after, the step card it waited on, closed once each
+    such step is done (record 0070), else its last declined card."""
     cards = [c for c in posted_cards(entries) if c["state"] != "lost" and c["by"] == by]
     if kind == "land" and "kit" in thing:
         mine = [c for c in cards if c["key"] == f"land/{thing['kit']}"]
@@ -1667,15 +1655,30 @@ def follows_of(kind, thing, entries, by):
         mine = landing(thing["bolt"])
         return mine[-1]["card"] if mine and mine[-1]["state"] else None
     if kind == "deploy":
+        if thing.get("after"):
+            return thing["after"]
         mine = [c for c in cards if c["key"] == f"deploy/{thing['env']}"]
         return mine[-1]["card"] if mine and mine[-1]["state"] == "declined" else None
     if kind == "step":
+        if thing.get("answered"):
+            return thing["answered"]
         deploys = [i for i, c in enumerate(cards) if c["key"] == f"deploy/{thing['env']}"]
         if not deploys:
             return None
-        steps = [c for c in cards[deploys[-1] + 1:] if c["key"].startswith(f"op/{thing['env']}/") and c["key"] != thing.get("key")]
+        steps = [c for c in cards[deploys[-1] + 1:] if c["key"].startswith("op/") and c["key"] != thing.get("key")
+                 and thing["env"] in heads_envs(entries, c["card"], c["key"])]
         return (steps[-1] if steps else cards[deploys[-1]])["card"]
     return None
+
+
+def heads_envs(entries, card, key):
+    """The environments a step card names, from the Heads its last post or change recorded, <env>@<to> or <env> each;
+    its key's, op/<env>/<n>, alone for a card recording none (record 0070 Decision 3)."""
+    heads = None
+    for e in entries:
+        if e.get("Act") in ("card.post", "card.update") and e.get("Card") == card and not e.get("Refused"):
+            heads = e.get("Heads")
+    return [w.partition("@")[0] for w in heads.split()] if heads else [key.split("/")[1]]
 
 
 # ------------------------------------------------------------------------- a card asked again (record 0031)
@@ -1765,10 +1768,13 @@ def deploy_since(earlier, head):
             f"The offer is now {head[:7]}, and crew holds no record of the head you answered on."]
 
 
-def step_since(followed, env, n, to=None):
-    """What changed since the user answered the card a step's card follows, from that card's key (followed): its
-    deploy's, deploy/<env>, ended, and this is its step n; a step's before it, op/<env>/<m>, is behind them, and this
-    is step n; nothing for any other key, or none."""
+def step_since(followed, env, n, to=None, hosts=None):
+    """What changed since the user answered the card a step's card follows, from that card's key (followed): hosts,
+    when it is the same step's card, those that recorded the step since, which that answer did not settle (record
+    0070); its deploy's, deploy/<env>, ended, and this is its step n; a step's before it, op/<env>/<m>, is behind them,
+    and this is step n; nothing for any other key, or none."""
+    if hosts:
+        return [f"{joined(list(hosts))} {'has' if len(hosts) == 1 else 'have'} recorded this step, which that answer did not settle."]
     m = re.fullmatch(r"op/[a-z0-9][a-z0-9-]*/(\d+)", followed or "")
     if m:
         return [f"Step {m.group(1)} is behind you, and this is step {n}."]
@@ -1888,8 +1894,9 @@ def revision(got, kind_changed=False, questions=False, anew=False):
 
 
 def form_asked(entries, card):
-    """The form a card of crew's took at its last post or change the run record holds done, its Form (a deploy's
-    boxes, deploy_form), or None for a hold-to-approve or one posted before crew recorded forms."""
+    """The form a card of crew's took at its last post or change the run record holds done, its Form, or None for a
+    hold-to-approve or one posted before crew recorded forms: a deploy's card posted as boxes before record 0070,
+    which crew reads only to withdraw it, or follow it with the hold-to-approve (ops.raise_deploy)."""
     form = None
     for e in entries:
         if e.get("Act") in ("card.post", "card.update") and e.get("Card") == card and not e.get("Refused"):

@@ -10634,8 +10634,11 @@ def rail_record(fleet, found, props, crossed=None):
         landings += r["landings"]
         held[l] = r["held"]
         import ops  # ops.py imports nothing of this module
-        mine = [e for e in entries if (e.get("Act") or "").startswith("ops.") and e.get("Host") == fleet["drives"][l]["machine"]]
-        deploys += [dict(r, at=utc(r["at"]), doc=None) for r in ops.rows(fleet, l, mine)]
+        machine = fleet["drives"][l]["machine"]
+        mine = [e for e in entries if (e.get("Act") or "").startswith("ops.") and e.get("Host") == machine]
+        carded = [e for e in entries if (e.get("Act") or "").startswith("card.") and e.get("Host") == machine]
+        handed = ops.offers_handed(l, mine)  # an offer's files are kept on the main level's host alone, read there
+        deploys += [dict(r, at=utc(r["at"]), doc=None) for r in ops.rows(fleet, l, mine, carded, handed)]
         opses[l] = sorted(mine + [e for e in entries if e.get("Act") == "bolt.land"], key=lambda e: (e["At"], e["Id"]))
     return times, cards, unread, landings, held, deploys, opses, logs
 
@@ -11227,18 +11230,28 @@ def blind_land(fleet, label, plan, sv, key, runs=None):
 CARD_RETRY = 600
 
 
-def row_gone(key, entries, kits=(), kit_of=None):
+def row_gone(key, entries, kits=(), kit_of=None, rows=()):
     """Why a row's card has no row now, from the run record's entries, oldest first: (outcome, None) when the event
     that ends its row was recorded, so its card is closed with what was done, a proposal applied, a bolt landed or a
     batch answered in a main-level pane, in whose and when (pane_answered); else (None, reason), its card withdrawn
     with why, a proposal or a bolt dropped among them, and a batch that waits on nothing with the words of crew's close
     (batch_settled). A kit's landings card, land/<kit> (kits, the drive's kits' names), that nothing waits to land
     on its main; and a landing card of a bolt's own, from before a kit's card, whose bolt its kit's landing row names (kit_of, {bolt: its kit}), that it is now a row of its kit's landings card (rail-cards
-    "A bolt's own landing card gives way to its kit's")."""
+    "A bolt's own landing card gives way to its kit's"). A step's card whose step another row's card asks now (rows,
+    the rail's rows, each step row with the heads its card names and its step's key), folded into it, that it is asked
+    there with those hosts, never that its step no longer waits (record 0070 Decision 7)."""
     kind, _, rest = (key or "").partition("/")
     thing, _, head = rest.partition("/")
     if kind == "land" and not head and thing in kits:
         return None, f"nothing waits to land on {thing}'s main"
+    if kind == "op":
+        import ops  # ops.py imports nothing of this module
+        mine = ops.key_step(ops.numbered(ops.state([e for e in entries if (e.get("Act") or "").startswith("ops.")])[2]), key)
+        other = next((r for r in rows if mine and r.get("key") != key and r.get("step") == mine[2]
+                      and ops.head_word(mine) in (r.get("heads") or [])), None)
+        if other:
+            hosts = [w.partition("@")[0] for w in other["heads"] if w.partition("@")[0] != mine[0]]
+            return None, f"Asked on {other['key']}" + (f" with {joined(list(dict.fromkeys(hosts)))}" if hosts else "")
 
     def last(on, *acts):
         return next((e["Act"] for e in reversed(entries) if e.get("Act") in acts and not e.get("Refused") and on in (e.get("On") or [])), None)
@@ -11262,6 +11275,27 @@ def row_gone(key, entries, kits=(), kit_of=None):
     return None, {"batch": "its batch no longer waits to be read", "deploy": "its deploy no longer waits on your word",
                   "op": "its step no longer waits on you",
                   "verify": "a verify report has no card, its findings fixed in one round"}.get(kind, "its row is gone")
+
+
+def step_card_moved(c, row, entries):
+    """The change note of a step's card whose row's heads it does not name as they stand (record 0070 Decision 7), from
+    the card (c), its row and the drive's run record: "<env> waits on it too" for a host its row carries that the card
+    does not name, "<env>'s is recorded <state>" for one it names that its row does not, as crew ops step notes them;
+    None when they agree, for a card the user answered, which waits for its settle, and for any card but a step's."""
+    import ops  # ops.py imports nothing of this module
+    if not (c.get("key") or "").startswith("op/") or "heads" not in row:
+        return None
+    if any(e.get("Act") == "card.answer" and e.get("Card") == c["card"] and not e.get("Refused") for e in entries):
+        return None
+    es = [e for e in entries if (e.get("Act") or "").startswith("ops.")]
+    named, steps = ops.card_steps(es, entries, c["key"], c["card"]), ops.state(es)[2]
+    now = list(row.get("heads") or [])
+    if {ops.head_word(k) for k in named} == set(now):
+        return None
+    came = [w.partition("@")[0] for w in now if w not in {ops.head_word(k) for k in named}]
+    went = [(k[0], (steps.get(k) or {}).get("State")) for k in sorted(named) if ops.head_word(k) not in now]
+    return "; ".join([f"{x} waits on it too" for x in came]
+                     + [f"{x}'s is recorded {said}" if said else f"{x}'s no longer waits on you" for x, said in went])
 
 
 def record_settled(key, entries, kits=()):
@@ -11425,13 +11459,16 @@ def sweep_judged(here, rows, cards_, entries, owners, blind, proposed, now, plan
     it holds a bolt that has neither landed nor been dropped since (send_waits): its row's absence is one read, a kit not
     read or a head not yet read, and taking the wait as ended from it is a guess (read.1); it is left waiting on its
     owner to land those bolts (waiting_on_owner, design Decision 5).
+    And each step's card with its row, unanswered, whose heads, the steps it names (ops.card_steps), differ from its
+    row's, to change in place with a note naming the hosts that came and went (step_card_moved, record 0070 Decision
+    7), a missed raise or a card from before record 0070 among them.
     Returns {gone: [(card, outcome, reason)], questions: [card], held: [(card, row)], none: [row], again: [(row, older
     card)], settled: [(key, why)], unread: [(card, row)], left_fleet: [(card, words)], records: [card],
-    waiting_on_owner: [(card, bolts)]}."""
+    waiting_on_owner: [(card, bolts)], moved: [(card, row, note)]}."""
     import ops  # its decision of a deploy's card alone
     rowed = {r["key"]: r for r in rows}
     out = {"gone": [], "questions": [], "held": [], "none": [], "again": [], "settled": [], "unread": [], "left_fleet": [],
-           "records": [], "waiting_on_owner": []}
+           "records": [], "waiting_on_owner": [], "moved": []}
 
     def left(c):  # a card of crew's own whose owner left the fleet (cards.role_left)
         return labels is not None and bool(cards.row_object(c["key"] or "")) and cards.role_left(c["by"], labels)
@@ -11452,13 +11489,16 @@ def sweep_judged(here, rows, cards_, entries, owners, blind, proposed, now, plan
             out["questions"].append(c)
         elif c["key"] in rowed:
             out["held"].append((c, rowed[c["key"]]))
+            note = step_card_moved(c, rowed[c["key"]], entries)
+            if note and not refused_lately(entries, now, card=c["card"]):
+                out["moved"].append((c, rowed[c["key"]], note))
             if re.fullmatch(r"(batch|proposal)/\d+|land/[a-z0-9][a-z0-9-]*", c["key"]) and reading_unread(entries, c["key"], c["card"], now):
                 out["unread"].append((c, rowed[c["key"]]))
         elif (land_key(c["key"], kits) or (None,))[0] == "kit" and send_waits(entries, c["card"]):
             out["waiting_on_owner"].append((c, send_waits(entries, c["card"])))
         elif (not (c["key"].startswith("land/") and c["key"].split("/")[1] in blind) and not refused_lately(entries, now, card=c["card"])
               and not ops.word_stands(c["key"], entries) and not older_than_card(c["key"], proposed)):
-            out["gone"].append((c, *row_gone(c["key"], entries, kits, kit_of)))
+            out["gone"].append((c, *row_gone(c["key"], entries, kits, kit_of, rows)))
     carded = {c["key"] for c in cards_ if not left(c)}  # a card in a name that left the fleet cards no row
     mine = [r for r in rows if cards.row_object(r["key"]) and (owners.get(r["key"]) or (None, None))[1] == here
             and not refused_lately(entries, now, key=r["key"])
@@ -14003,7 +14043,9 @@ def built_fields(b):
     """A built card's post or change entry's own fields: Unread, why its reading could not open (unopened), crew's own
     message (record.3), left out when it opened or the card links none; and Heads, a kit's landings card's rows as
     <bolt>@<head>, :main after one taking main first or :left after one the user cleared on their last send, then :next
-    after one with no box (cards.landings_card), which its next raise reads (landings_step); and Form, a deploy card's boxes (cards.deploy_form), which its next raise reads (cards.form_asked)."""
+    after one with no box (cards.landings_card), which its next raise reads (landings_step), or a step card's steps as
+    <env>@<to>, or <env> for one that names no deploy (cards.step_card), which crew ops settle, one step card at a time
+    and the rail's read read (ops.card_steps); and Form, a card's form where its builder hands one (cards.form_asked)."""
     return (({"Unread": b["unread"]} if b.get("unread") else {}) | ({"Heads": " ".join(b["heads"])} if b.get("heads") else {})
             | ({"Form": b["form"]} if b.get("form") else {}))
 
@@ -15089,6 +15131,17 @@ def sweep_cards(fleet, read, acts=None, answers=None, listed=None):
             elif kind_raises:
                 did(l, c["key"], c["card"], c["by"], "left", ("Pending You no longer finds it" if cards.lost(words) else
                                                               "Pending You holds it in another name") + ", and its raise posted none")
+        for c, row, note in j["moved"]:  # a step's card changed in place to name its row's hosts (record 0070 Decision 7)
+            if c["card"] not in found or lost_words(c):
+                continue
+            up = acts.raise_of("op")
+            try:
+                new = up(fleet, row, acts=acts, note=note) if up else None
+            except Refusal as e:
+                did(l, c["key"], c["card"], c["by"], "left", f"its raise refused: {e}")
+                continue
+            did(l, c["key"], c["card"], c["by"], "changed" if new == c["card"] else "posted" if new else "left",
+                note if new else "its raise changed none", None if new in (None, c["card"]) else new)
         for row, older in j["again"]:
             owner = owners[row["key"]][0]
             new, kind_raises = raised(l, dict(row, dead=older), owner)
