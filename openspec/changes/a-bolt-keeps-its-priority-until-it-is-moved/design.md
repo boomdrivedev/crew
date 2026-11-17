@@ -104,6 +104,8 @@ Not taken: no floor at 0. Negative priorities would put a kit's work below role 
 
 `plan.reprioritise(w, numbers)` appends them. It still appends nothing when the branch holds no `requests.rec`.
 
+`reach_places` and `runner.reach` take the bolt's priority where the caller numbered the bolt itself (`priority`), and read it from the bolt's requests otherwise. A start passes the number it gave the bolt, the same its base place's launch carries. A logic case that launches a started bolt's pieces before its base place, or with none, passes the number `numbering` gives (`tests/py/facts.py` `numbered`). Not taken: every such case launching the base place first, which would renumber the requests a hundred cases name.
+
 ### 4. Numbering afresh is rare, and each place is re-set once
 
 Where `numbering` finds no number, it numbers every started bolt in the plan's order. The bottom takes `FIRST`, and each one above it takes `SPACING` more. Only the bolts whose priority changes are listed, so `priorities` re-sets each of their unfinished places once.
