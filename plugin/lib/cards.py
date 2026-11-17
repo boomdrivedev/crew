@@ -477,7 +477,7 @@ def renamed_drawn(a, before, kits, repo, where, renamed):
     return [], block("RENAME KIT", f"{a.old} → {a.new}", [x for l in says for x in wrap(l, SAYS)])
 
 
-STAYS = "stays unlanded until your send"  # what a proposal's card says of a bolt its command marks to stay (record 0067)
+STAYS = "stays unlanded until you say to land it"  # what a proposal's card says of a bolt its command marks to stay (record 0067)
 
 
 def stays_of(a):
@@ -1614,8 +1614,8 @@ def proposal_card(f):
         return {"id": r["id"], "label": cut(r["label"], LABEL), "detail": by_words(r["detail"], DETAIL),
                 "consequence": by_words(r["went"], DETAIL - len(left)) + left if box else by_words(r["went"], DETAIL)}
     if shape == "approve":
-        how = ["Hold to apply it whole; to keep a unit it drops or amends, decline with a note." if also and not session
-               else "Hold to apply it whole."]
+        how = ["Approved, all of it applies."] + (["Declined, none of it does, and your note tells the planner what to keep."]
+                                                  if also and not session else [])
         form = dict(kind="approve", intent="approve", recommendedIds=["approve"],
                     approve={"action": f"Apply the plan change to {to}", "risk": "low", "reversible": True})
     elif shape == "choice":
@@ -1625,7 +1625,7 @@ def proposal_card(f):
                                           "consequence": by_words(r["left"][0].upper() + r["left"][1:], DETAIL)}]
         form = dict(kind="choice", intent="decide", options=options, recommendedIds=[r["id"]])
     else:
-        how = ["Each new unit below is ticked; clear any to leave it out, and send."]
+        how = ["Each new unit below goes ahead as proposed unless you leave it out."]
         g = -(-len(rows) // BOXES)
         sizes = [len(rows) // g + (1 if k < len(rows) % g else 0) for k in range(g)]
         groups = [rows[sum(sizes[:k]):sum(sizes[:k + 1])] for k in range(g)]
@@ -1639,7 +1639,8 @@ def proposal_card(f):
         how.append("What it drops or amends applies with it.")
     staying = list(dict.fromkeys(a.bolt for a in argvs if stays_of(a)))  # each bolt it marks to stay, said on its face
     if staying:
-        how.append(f"{joined(staying)} {'stays' if len(staying) == 1 else 'stay'} unlanded until your send of its landings card.")
+        how.append(f"{joined(staying)} " + ("stays unlanded until you say to land it." if len(staying) == 1 else
+                                             "stay unlanded until you say to land them."))
     case = prose(f["case"], 10 ** 6)
     said = ((f"Read it all in one session: {f['session']}\n\n" if f.get("session") else "")
             + " ".join([SENTENCE.split(case)[0] if case else ""] + how))

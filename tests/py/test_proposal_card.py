@@ -66,7 +66,7 @@ class TestBuiltDropAmendAdd:
         c = self.B["card"]
         assert self.B["key"] == "proposal/1"
         assert c["title"] == "Plan change to deploys: 1 dropped, 1 amended, 2 new"
-        assert c["summary"] == ("The third unit is not needed. Each new unit below is ticked; clear any to leave it out, and send. "
+        assert c["summary"] == ("The third unit is not needed. Each new unit below goes ahead as proposed unless you leave it out. "
                                 "What it drops or amends applies with it.")
         assert c["context"]["background"] == "The third unit is not needed. The second needs more. Two units finish the bolt."
 
@@ -113,7 +113,7 @@ def test_a_proposal_with_no_new_unit_is_a_hold_to_approve_of_low_risk():
     assert (c["kind"], c["approve"], c["recommendedIds"]) == ("approve", {"action": "Apply the plan change to deploys", "risk": "low",
                                                                          "reversible": True}, ["approve"])
     assert [a["kind"] for a in c["artifacts"]] == ["image", "code"]
-    assert c["summary"] == "The last goes first. Hold to apply it whole."
+    assert c["summary"] == "The last goes first. Approved, all of it applies."
 
 
 def test_a_proposal_of_drops_alone_is_a_hold_to_approve_declined_with_a_note_to_keep_one():
@@ -123,8 +123,8 @@ def test_a_proposal_of_drops_alone_is_a_hold_to_approve_declined_with_a_note_to_
     assert c["title"] == "Plan change to deploys: 3 dropped"
     assert (c["kind"], c["intent"], c["approve"]["risk"], c["approve"]["reversible"]) == ("approve", "approve", "low", True)
     assert "options" not in c and "questions" not in c and b["boxes"] == []
-    assert c["summary"] == ("Three units are not needed. Hold to apply it whole; to keep a unit it drops or amends, "
-                            "decline with a note.")
+    assert c["summary"] == ("Three units are not needed. Approved, all of it applies. Declined, none of it does, and your note "
+                            "tells the planner what to keep.")
     md = c["artifacts"][0]
     assert md["title"] == "The dropped units"
     text = "\n".join(md["lines"])
@@ -165,7 +165,7 @@ def test_a_rename_is_a_block_naming_both_names_and_no_bolt(monkeypatch):
     c = b["card"]
     assert (c["kind"], c["approve"]["risk"], b["boxes"]) == ("approve", "low", []) and "options" not in c
     assert c["title"] == "Plan change to flywheel-cloud and tailrace"
-    assert c["summary"] == "Two repositories were renamed on their forge. Hold to apply it whole."
+    assert c["summary"] == "Two repositories were renamed on their forge. Approved, all of it applies."
     assert [a["kind"] for a in c["artifacts"]] == ["image", "code"]
     assert c["artifacts"][-1]["lines"] == [
         "RENAME KIT", "       flywheel-cloud → boomdrive-cloud", "       its work is finished; its", "       launches, landings and record",
@@ -198,7 +198,7 @@ def test_a_lone_row_is_the_choice_of_its_two_sides_since_a_list_holds_two_at_lea
     assert c["summary"] == "One more unit, queued."
     dropped = built(5, "x.", 'unit drop c-third "Not needed now."')["card"]
     assert (dropped["kind"], "options" not in dropped) == ("approve", True)
-    assert dropped["summary"].endswith("decline with a note.")
+    assert dropped["summary"].endswith("Declined, none of it does, and your note tells the planner what to keep.")
     beside = built(5, "x.", 'unit drop c-third "Not needed now."', 'unit add g-one "One unit." --bolt deploys')["card"]
     assert ([o["id"] for o in beside["options"]], beside["recommendedIds"]) == (["add:g-one", "unticked"], ["add:g-one"])
     assert beside["summary"] == "x. What it drops or amends applies with it."
@@ -544,15 +544,16 @@ class TestSweptOnThePlanAsItStands(OnTheTip):
 
 def test_a_bolt_planned_to_stay_says_it_waits_for_the_send():
     """plan-proposals "A bolt planned to stay" (record 0067): the card of a proposal whose bolt new holds --stays names
-    the bolt and says it stays unlanded until the user's send, on its face and in its text, so the user approves the
-    mark knowingly; a bolt start holding --stays is drawn so too, and a bolt planned without it says nothing of it."""
+    the bolt and says it stays unlanded until the user says to land it, on its face and in its text, so the user
+    approves the mark knowingly; a bolt start holding --stays is drawn so too, and a bolt planned without it says
+    nothing of it."""
     b = built(5, "The console's pages are a bolt of their own, kept open once done.",
               'bolt new console-pages "Console pages" --repo switchboard-kit --stays')
     c = b["card"]
-    assert c["summary"] == ("The console's pages are a bolt of their own, kept open once done. Hold to apply it whole. "
-                            "console-pages stays unlanded until your send of its landings card.")
-    assert "\n".join(c["artifacts"][-1]["lines"]).count("stays unlanded until your send") == 1
+    assert c["summary"] == ("The console's pages are a bolt of their own, kept open once done. Approved, all of it applies. "
+                            "console-pages stays unlanded until you say to land it.")
+    assert " ".join(" ".join(c["artifacts"][-1]["lines"]).split()).count("stays unlanded until you say to land it") == 1
     argvs = [plan.do_args("wldn", "bolt start pages --stays")]
-    assert "stays unlanded until your send" in "\n".join(cards.drawn(fresh().plan, fresh().plan, argvs)["lines"])
+    assert "stays unlanded until you say to land it" in " ".join(" ".join(cards.drawn(fresh().plan, fresh().plan, argvs)["lines"]).split())
     plain = built(6, "Pages.", 'bolt new console-pages "Console pages" --repo switchboard-kit')["card"]
     assert "unlanded" not in plain["summary"] and "unlanded" not in "\n".join(plain["artifacts"][-1]["lines"])
