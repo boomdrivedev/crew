@@ -15,8 +15,9 @@ its stream on every view (stream_said, piece_said).
 A start launches its bolt whole, refused only where no runner answers for the drive (runnerless), and every plan
 write reaches the places a started bolt launched as its own act: added work launched, dropped work dropped, a dependent
 launched again when what it waits on is (reach), an amendment a retry of construct or a launch anew (amending), and a
-move, split or change of After of launched work refused (launched_refusal); each launch's priority follows its bolt's
-place in the plan (priorities).
+move, split or change of After of launched work refused (launched_refusal); a bolt's launches carry its priority, which
+it keeps until it is moved, a start or a move placing it between its started neighbours (numbering) and a move re-setting
+its own places alone (priorities).
 
 A place that stopped short asking, or waits on its caller, is answered by a retry with the answer's words (answer_retry).
 A fix on a started bolt is a launch of Flume's fix kind on the bolt's branch (fix_launch), dropped by a drop
@@ -1023,6 +1024,46 @@ def priority_of(requests, bolt):
             if p is not None and n is not None and (newest is None or n > newest[0]):
                 newest = (n, p)
     return newest[1] if newest else None
+
+
+# A started bolt's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 2; record 0069): a bolt placed beside
+# one started neighbour stands SPACING from it, a bolt alone takes FIRST, and every bolt stays above 0, where a role's run
+# launches, and below MAIN_PRIORITY, a fix of main's (main_priority).
+SPACING = 1000000
+FIRST = 1000000000000
+MAIN_PRIORITY = 2000000000000
+
+
+def numbering(plan, requests, bolt):
+    """The priorities a start or a move of bolt changes (a-bolt-keeps-its-priority-until-it-is-moved, Decisions 2 and 4),
+    from plain facts (code.7): plan, as the write leaves it; requests, requests.rec's records. Returns {a started bolt:
+    its priority now} for each whose priority must change, {} for a bolt not started (Path: flume). Its neighbours are
+    the nearest started bolts above and below it in the plan's order that have a priority (priority_of), itself left
+    out. It keeps its own where that stands below the one above, or MAIN_PRIORITY where there is none, and above the one
+    below, or 0, so a move that changes nothing in the order, or a write replayed at a newer tip (plan.1), re-sets
+    nothing; else it takes FIRST with none on either side, the one below's plus SPACING while that stays below
+    MAIN_PRIORITY, the one above's less SPACING while that stays above 0, or the whole number halfway between its two
+    neighbours', rounded down, where one lies strictly between. Where none of these gives one, every started bolt is
+    numbered afresh in the plan's order, the bottom FIRST and each above it SPACING more, and only those whose priority
+    changes are listed."""
+    order = [b.name() for b in plan.bolts() if b.get("Path") == "flume"]
+    if bolt not in order:
+        return {}
+    have = {b: priority_of(requests, b) for b in order}
+    i = order.index(bolt)
+    above = next((have[b] for b in reversed(order[:i]) if have[b] is not None), None)
+    below = next((have[b] for b in order[i + 1:] if have[b] is not None), None)
+    own, top, bottom = have[bolt], MAIN_PRIORITY if above is None else above, 0 if below is None else below
+    if own is not None and bottom < own < top:
+        return {}
+    placed = (FIRST if above is None and below is None else
+              below + SPACING if above is None else
+              above - SPACING if below is None else
+              (above + below) // 2)
+    if bottom < placed < top:
+        return {bolt: placed}
+    fresh = {b: FIRST + SPACING * (len(order) - 1 - k) for k, b in enumerate(order)}
+    return {b: p for b, p in fresh.items() if have[b] != p}
 
 
 def whole(v):

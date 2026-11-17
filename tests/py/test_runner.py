@@ -1460,6 +1460,41 @@ class TestPriorities:
         assert runner.priority_of(rs[:5], "x") == 9 and runner.priority_of(rs[:4], "x") == 7
         assert runner.priority_of([], "x") is None
 
+    @staticmethod
+    def at(*bolts):
+        """madswan's plan with each bolt in order, (name, its priority) started or (name, its priority, None) planned,
+        and requests.rec holding each priority given as its base place's launch, none for a priority of None."""
+        p = plan.Plan(flume_plan([(b[0], None, b[2] if len(b) > 2 else "flume") for b in bolts]))
+        set_ = [(b[0], b[1]) for b in bolts if b[1] is not None]
+        return p, held(*[rec(k, "launch", f"bolt/{b}", **dict(BOLT, Name=b, Priority=n)) for k, (b, n) in enumerate(set_, 1)])
+
+    def test_a_placed_bolt_takes_a_number_beside_its_started_neighbours(self):
+        """Alone, FIRST; above the top, its plus SPACING; below the bottom, its less SPACING; between two, the whole
+        number halfway between theirs; and t, planned with a number its requests set, is no neighbour."""
+        assert (runner.SPACING, runner.FIRST, runner.MAIN_PRIORITY) == (1000000, 1000000000000, 2000000000000)
+        assert runner.numbering(*self.at(("x", None)), "x") == {"x": 1000000000000}
+        assert runner.numbering(*self.at(("x", None), ("y", 1000000000000)), "x") == {"x": 1000001000000}
+        assert runner.numbering(*self.at(("x", 1000000000000), ("y", None)), "y") == {"y": 999999000000}
+        assert runner.numbering(*self.at(("x", 1000001000000), ("y", None), ("z", 1000000000000)), "y") == {"y": 1000000500000}
+        assert runner.numbering(*self.at(("t", 1000000000000, None), ("x", None)), "x") == {"x": 1000000000000}
+        assert runner.numbering(*self.at(("t", 1000000000000, None), ("x", None)), "t") == {}
+
+    def test_a_bolt_already_in_order_keeps_its_number(self):
+        """z moved between x and y already stands between them; a bolt alone keeps any number above 0 and below a fix of
+        main's: nothing changes."""
+        assert runner.numbering(*self.at(("x", 1000002000000), ("z", 1000001500000), ("y", 1000001000000)), "z") == {}
+        assert runner.numbering(*self.at(("x", 5)), "x") == {}
+
+    def test_with_no_number_left_every_started_bolt_is_numbered_afresh(self):
+        """x, y and z at 3, 2 and 1, numbered before bolts kept theirs, z moved between x and y; a bottom at SPACING with
+        y started below it; a top at MAIN_PRIORITY less 1 with x started above it: every started bolt is numbered from
+        FIRST up, SPACING apart, and one that already stands at its number is not listed."""
+        assert runner.numbering(*self.at(("x", 3), ("z", 1), ("y", 2)), "z") == {
+            "x": 1000002000000, "z": 1000001000000, "y": 1000000000000}
+        assert runner.numbering(*self.at(("x", 3), ("z", 1), ("y", 1000000000000)), "z") == {"x": 1000002000000, "z": 1000001000000}
+        assert runner.numbering(*self.at(("x", 1000000), ("y", None)), "y") == {"x": 1000001000000, "y": 1000000000000}
+        assert runner.numbering(*self.at(("x", None), ("y", 1999999999999)), "x") == {"x": 1000001000000, "y": 1000000000000}
+
     def test_two_bolts_started_in_order(self, monkeypatch):
         """x is started and then y, x above y in the plan: x's pieces' launches carry a higher priority than y's, each
         naming crew's repository and no host or stream, intent madswan/<bolt> and recipient madswan/planner, after its
