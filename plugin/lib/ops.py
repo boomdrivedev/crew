@@ -253,8 +253,10 @@ def keyed(es, entries=()):
 
 
 def words_of(text):
-    """A step's words as crew compares them: each run of spaces, line breaks among them, one space."""
-    return " ".join((text or "").split())
+    """A step's words as crew compares them: all its text says before its first field (step_words), each run of
+    spaces, line breaks among them, one space, so a step recorded with its why or its commands is tied by its words
+    alone."""
+    return step_words(text)[0]
 
 
 def waited_on(handed, es, env):

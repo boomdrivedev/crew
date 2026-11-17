@@ -1350,3 +1350,82 @@ class TestOneStepManyHosts:
         three = old + [card("card.post", "op/macbook-pro/8", "req_8", 7, By="afterthought-ops"),
                        card("card.post", "op/mac-studio/7", "req_7", 8, By="afterthought-ops")]
         assert ops.group_key(g, ops.step_cards(CUTOVER, three)) == "op/mac-studio/7"
+
+
+class TestSettle:
+    """crew ops settle, its acts stood in for: the user's answer on a step's card recorded on every step it named, each
+    under its own environment, deploy and key, the card closed once, and what the step released raised (Decision 6)."""
+    KEY = "op/mac-studio/7"
+    HANDED = f"step\t1\tuser\tbefore\t{CHA}\t{DISK_WHY}\t{MOVE}\n"
+
+    @pytest.fixture
+    def settled(self, monkeypatch, tmp_path):
+        import plan
+        got = {"emitted": [], "closed": [], "next": [], "raised": [], "cards": []}
+        es = list(CUTOVER)
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: es)
+        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path / env)
+        (tmp_path / CHA).mkdir()
+        (tmp_path / CHA / "steps.txt").write_text(self.HANDED)
+
+        def emit(label, act, env, why, refused=None, **f):
+            got["emitted"].append(dict(f, env=env))
+            es.append(e(act, env=env, minutes=30, **{k: v for k, v in f.items() if v is not None}))
+        monkeypatch.setattr(ops, "emit", emit)
+        monkeypatch.setattr(plan, "row_card_close", lambda fleet, label, owner, key, outcome=None, reason=None, acts=None, **k:
+                            got["closed"].append((owner, key, outcome)))
+        monkeypatch.setattr(ops, "raise_next_step", lambda fleet, label, env, k=None: got["next"].append(env))
+        monkeypatch.setattr(ops, "raise_deploy", lambda fleet, row, acts=None, note=None: got["raised"].append(row["key"]))
+
+        class Acts:
+            def __init__(self, fleet):
+                pass
+
+            def entries(self, label):
+                return got["cards"]
+        monkeypatch.setattr(plan, "CardActs", Acts)
+        return got
+
+    def run(self, key, state):
+        a = ops.parser().parse_args(["settle", key, "--label", "afterthought", "--state", state])
+        ops.settle(FLEET, a)
+
+    def posted(self, settled):
+        settled["cards"].append(card("card.post", self.KEY, "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS))
+
+    def test_done_is_recorded_on_each_of_the_four_under_its_own_deploy_and_key_the_card_closed_once_and_the_deploy_raised(self, settled):
+        self.posted(settled)
+        self.run(self.KEY, "done")
+        assert [(x["env"], x["Head"], x["Key"], x["State"], x["Doer"], x["When"], x["Note"]) for x in settled["emitted"]] == [
+            ("mac-studio", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            ("macbook-pro", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            ("deneb", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            (CHA, S2, DISK, "done", "user", "before", f"answered on {self.KEY}")]
+        assert settled["closed"] == [("afterthought-ops", self.KEY, "Done.")]
+        assert settled["next"] == ["mac-studio", "macbook-pro", "deneb", CHA] and settled["raised"] == [f"deploy/{CHA}"]
+        assert ops.state(ops.entries("afterthought"))[2][("deneb", S1, DISK)]["State"] == "done"
+
+    def test_declined_is_recorded_on_each_the_card_closes_skipped_and_no_deploy_is_raised(self, settled):
+        self.posted(settled)
+        self.run(self.KEY, "declined")
+        assert [x["State"] for x in settled["emitted"]] == ["declined"] * 4
+        assert settled["closed"] == [("afterthought-ops", self.KEY, "Skipped.")] and settled["raised"] == []
+
+    def test_a_key_no_row_or_card_holds_is_refused_and_nothing_is_recorded(self, settled):
+        with pytest.raises(ops.Refusal, match="no step's row or card holds op/deneb/99"):
+            self.run("op/deneb/99", "done")
+        assert settled["emitted"] == [] and settled["closed"] == []
+
+    def test_a_card_with_no_post_settles_the_rows_steps(self, settled):
+        self.run(self.KEY, "done")
+        assert [x["env"] for x in settled["emitted"]] == ["mac-studio", "macbook-pro", "deneb", CHA]
+        assert settled["closed"] == [] and settled["raised"] == [f"deploy/{CHA}"]
+
+    def test_only_the_steps_the_card_named_are_settled_a_host_recorded_since_waiting_for_its_own_card(self, settled):
+        settled["cards"].append(card("card.post", self.KEY, "req_7", 6, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}"))
+        self.run(self.KEY, "done")
+        assert [x["env"] for x in settled["emitted"]] == ["mac-studio", "deneb"] and settled["raised"] == []
+
+    def test_a_key_not_a_step_cards_is_refused_by_its_arguments(self):
+        a = ops.parser().parse_args(["settle", "deploy/deneb", "--label", "wldn", "--state", "done"])
+        assert ops.args_refusal(FLEET, a) == "deploy/deneb is no step card's key: op/<env>/<n>, as the rail shows it"
