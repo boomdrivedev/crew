@@ -236,6 +236,7 @@ def test_sixteen_new_units_are_a_hold_to_approve_that_links_its_reading_session_
     b = built(7, "Sixteen units for the queue.", *adds("x", 16), session="http://mac-studio:19500")
     c = b["card"]
     assert (c["kind"], b["session"]) == ("approve", True)
+    assert c["approve"]["action"] == "Apply the plan change to the switchboard-kit queue"
     assert c["summary"].startswith("Read it all in one session: http://mac-studio:19500\n\nSixteen units for the queue.")
     assert c["context"]["links"] == [{"label": "Read proposal 7", "url": "http://mac-studio:19500"}]
 

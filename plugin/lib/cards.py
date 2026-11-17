@@ -1594,10 +1594,10 @@ def proposal_card(f):
         if made.get(a.unit) is a:
             units[a.unit] = a
             # Started as plan.started reads it, on the plan at the tip: the plan the commands leave is built with no runner.
-            to, was, now = a.bolt or None, f["before"].item(a.unit), f["after"].item(a.unit)
-            tip = f["before"].bolt(to) if to else None
-            words = new_row_words(a.sub, a.unit, to, a.repo if a.sub == "add" else was.get("Repo") if was else None,
-                                  d["came_from"].get(a.unit), tip is not None and tip.get("Path") == "flume", to in starting,
+            into, was, now = a.bolt or None, f["before"].item(a.unit), f["after"].item(a.unit)  # never `to`, the title's
+            tip = f["before"].bolt(into) if into else None
+            words = new_row_words(a.sub, a.unit, into, a.repo if a.sub == "add" else was.get("Repo") if was else None,
+                                  d["came_from"].get(a.unit), tip is not None and tip.get("Path") == "flume", into in starting,
                                   now.all("After") if now else [])
             rows.append({"id": f"add:{a.unit}", "unit": a.unit, "is": "new", "ticked": True, "label": words["go"],
                          "detail": d["intent"].get(a.unit) or "", **{k: words[k] for k in ("went", "leave", "left")}})
