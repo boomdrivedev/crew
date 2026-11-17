@@ -292,6 +292,51 @@ def test_a_move_into_a_bolt_is_a_box_to_move_it_in():
     assert c["options"][0]["consequence"] == "Cleared: stays in bolt pages; the rest still applies"
 
 
+class TestNewRowWords:
+    """plan-proposals "Each new unit's choice says what happens to it" and "Leaving a new unit out says where it stays":
+    cards.new_row_words on plain facts, no plan read."""
+
+    @staticmethod
+    def words(kind="add", unit="e", bolt="x", repo=KIT, came_from=None, running=False, starts=False, after=()):
+        return cards.new_row_words(kind, unit, bolt, repo, came_from, running, starts, after)
+
+    def test_into_a_started_bolt_it_starts_now(self):
+        w = self.words(running=True)
+        assert (w["go"], w["went"]) == ("Start e now", "It joins bolt x, which is running, and is built now.")
+        w = self.words(kind="move", unit="m", came_from="p", running=True)
+        assert (w["go"], w["went"]) == ("Start m now", "It moves into bolt x, which is running, and is built now.")
+
+    def test_into_a_bolt_the_proposal_starts_it_starts_now(self):
+        w = self.words(kind="move", unit="c", bolt="y", repo="flume", starts=True)
+        assert (w["go"], w["went"]) == ("Start c now", "It moves into bolt y, which this change starts, and is built now.")
+
+    def test_after_the_work_it_needs(self):
+        w = self.words(running=True, after=["a-first"])
+        assert (w["go"], w["went"]) == ("Start e after the work it needs",
+                                        "It joins bolt x, which is running, and is built once a-first has landed on it.")
+        w = self.words(running=True, after=["a-first", "b-second"])
+        assert w["went"] == "It joins bolt x, which is running, and is built once a-first and b-second have landed on it."
+
+    def test_into_a_bolt_not_started_it_is_for_later(self):
+        w = self.words(bolt="deploys")
+        assert (w["go"], w["went"]) == ("Add e for later", "It joins bolt deploys, which has not started, and is built once deploys starts.")
+        w = self.words(kind="move", unit="m", bolt="deploys", came_from="pages")
+        assert (w["go"], w["went"]) == ("Move m in for later",
+                                        "It moves into bolt deploys, which has not started, and is built once deploys starts.")
+
+    def test_into_a_queue_it_is_queued_for_later(self):
+        w = self.words(unit="g", bolt=None)
+        assert (w["go"], w["went"]) == ("Queue g for later", "It waits in the switchboard-kit queue until a bolt takes it.")
+
+    def test_left_out_says_where_it_stays(self):
+        w = self.words(unit="g", bolt=None)
+        assert (w["leave"], w["left"]) == ("Leave g out", "it is not added to the plan.")
+        w = self.words(kind="move", unit="c", bolt="y", repo="flume", starts=True)
+        assert (w["leave"], w["left"]) == ("Leave c out for now", "it stays in the flume queue.")
+        w = self.words(kind="move", unit="m", came_from="p", running=True)
+        assert (w["leave"], w["left"]) == ("Leave m out for now", "it stays in bolt p.")
+
+
 def test_a_closed_proposal_has_no_card_drawn_again():
     with pytest.raises(plan.Refusal, match="proposal 9 is dropped: it is closed, so it has no card"):
         built(9, "x", "unit order d-fourth --first", state="dropped")

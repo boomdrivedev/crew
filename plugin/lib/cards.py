@@ -409,6 +409,38 @@ def new_units(argvs):
                               and (a.sub == "add" or (a.sub == "move" and a.bolt != "queue"))))
 
 
+def new_row_words(kind, unit, bolt, repo, came_from, running, starts, after):
+    """What a proposal's card says of one unit or chore it makes new, from plain facts (plan-proposals "Each new unit's
+    choice says what happens to it" and "Leaving a new unit out says where it stays"): kind, add or move, a chore's
+    command the unit's; the bolt it goes into, None for its queue; repo, the queue's repository, for an add to a queue
+    or a move from one; came_from, the bolt a move leaves, None for its queue; running, whether its bolt is started at
+    the tip; starts, whether the proposal starts it; after, the units it comes after once applied. {go, went, leave,
+    left}: the label for going ahead and the sentence of what then happens, the label for leaving it out and the clause
+    of what then happens, lower-case to follow "Left out, ". went never names where a move comes from, which left
+    names, so a box's two outcomes fit one consequence."""
+    moved = kind == "move"
+    if bolt is None:
+        go, went = f"Queue {unit} for later", f"It waits in the {repo} queue until a bolt takes it."
+    else:
+        joins = f"It moves into bolt {bolt}" if moved else f"It joins bolt {bolt}"
+        if running or starts:
+            which = "which is running" if running else "which this change starts"
+            if after:
+                go = f"Start {unit} after the work it needs"
+                went = f"{joins}, {which}, and is built once {joined(list(after))} {'has' if len(after) == 1 else 'have'} landed on it."
+            else:
+                go, went = f"Start {unit} now", f"{joins}, {which}, and is built now."
+        else:
+            go = f"Move {unit} in for later" if moved else f"Add {unit} for later"
+            went = f"{joins}, which has not started, and is built once {bolt} starts."
+    if not moved:
+        leave, left = f"Leave {unit} out", "it is not added to the plan."
+    else:
+        leave = f"Leave {unit} out for now"
+        left = f"it stays in the {repo} queue." if came_from is None else f"it stays in bolt {came_from}."
+    return {"go": go, "went": went, "leave": leave, "left": left}
+
+
 def chore_words(words):
     """A chore's words as a proposal's card says them beside its name, where a unit's intent goes: marked a chore's."""
     return f"Chore: {words}" if words else words
