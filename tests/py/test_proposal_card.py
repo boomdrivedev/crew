@@ -3,6 +3,7 @@ on the plan at the tip and the plan its commands leave, with its picture. The lo
 it here proves crew needs nothing installed to draw it. The rail's sweep raises it again only on the plan as it stands
 (plan.raise_proposal, chain_closed). Raising the card is the proposals journey's (t-journey-plan)."""
 import json
+import re
 import struct
 import zlib
 
@@ -44,10 +45,12 @@ def adds(prefix, k):
     return [f'unit add {prefix}-{i} "Unit {i}." --repo switchboard-kit' for i in range(1, k + 1)]
 
 
-def built(n, case, *dos, session=None, state="open"):
+def built(n, case, *dos, session=None, state="open", applied=None):
+    """The card of a proposal of dos on fresh's plan, the plan it leaves built from applied, dos unless given: a start
+    asks a runner the fixture has not."""
     argvs = [plan.do_args("wldn", d) for d in dos]
-    return cards.proposal_card(dict(n=n, state=state, case=case, before=fresh().plan, after=apply(fresh(), *dos).plan,
-                                    argvs=argvs, session=session))
+    return cards.proposal_card(dict(n=n, state=state, case=case, before=fresh().plan,
+                                    after=apply(fresh(), *(dos if applied is None else applied)).plan, argvs=argvs, session=session))
 
 
 DOS = ('unit drop c-third "Not needed now."', 'unit amend b-second "The second thing, done better."',
@@ -540,6 +543,45 @@ class TestSweptOnThePlanAsItStands(OnTheTip):
         self.now = chain((1, "approved"))
         got, _ = self.swept(event="relink")
         assert (got, self.fetched, [n for n, *_ in self.called]) == ("req_2", [False], ["row_card_change"])
+
+
+CONTROLS = re.compile(r"\b(pick|side|tick|ticked|clear|cleared|hold|send)\b", re.I)
+
+
+def crews_words(c, case):
+    """Every word crew itself writes on a proposal's card, where it was written: its title; its summary past the
+    case's first sentence and any line linking its reading session; each choice's label and consequence, on the card or
+    in its questions; its approval's action; each question's title. The case, the names and the intents are the
+    planner's."""
+    first = cards.SENTENCE.split(cards.prose(case, 10 ** 6))[0]
+    summary = c["summary"].split("\n\n")[-1]
+    assert summary.startswith(first)
+    out = [("title", c["title"]), ("summary", summary[len(first):])]
+    for q in [c] + c.get("questions", []):
+        out += [(f"{o['id']} {k}", o.get(k) or "") for o in q.get("options", []) for k in ("label", "consequence")]
+    out += [("action", c["approve"]["action"])] if "approve" in c else []
+    return out + [(f"{q['id']} title", q["title"]) for q in c.get("questions", [])]
+
+
+@pytest.mark.parametrize("dos, session, applied", [
+    (('unit drop c-third "Not needed now."', 'unit drop d-fourth "Done elsewhere."', 'unit amend b-second "Better."'), None, None),
+    (adds("x", 16), "http://mac-studio:19500", None),
+    (adds("g", 1), None, None),
+    (('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move m-move y", "bolt start y"), None,
+     ('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move m-move y")),
+    (('unit drop c-third "Not needed now."', "unit move m-move deploys", 'unit add e-fifth "The fifth." --bolt deploys',
+      "unit order d-fourth --first"), None, None),
+    (adds("s", 7), None, None),
+    (('bolt new console-pages "Console pages" --repo switchboard-kit --stays', 'unit add p-one "Pages." --bolt console-pages'),
+     None, None)],
+    ids=["approve-drops-amend", "sixteen-new", "lone-add", "lone-move-started", "one-list", "lists", "a-bolt-to-stay"])
+def test_no_word_of_crews_on_a_proposal_card_names_a_control(dos, session, applied):
+    """plan-proposals "A proposal's card names no control" (briefs.13, roles.3): none of crew's own words on a
+    proposal's card, in any form, tells the user how to work it."""
+    case = "The plan moves on. Its reasons follow."
+    c = built(14, case, *dos, session=session, applied=applied)["card"]
+    found = [(where, m.group(0)) for where, words in crews_words(c, case) for m in [CONTROLS.search(words)] if m]
+    assert not found, f"crew's words name a control: {found}"
 
 
 def test_a_bolt_planned_to_stay_says_it_waits_for_the_send():
