@@ -1202,7 +1202,7 @@ class TestSweepJudged:
         there = card("proposal/4", "req_p4", "wldn-planner", host=BOX)
         rec = card("record/atlas-kit/0021", "req_r1", "wldn-design")
         assert self.judged(cards_=[there, rec]) == {"gone": [], "questions": [], "held": [], "none": [], "again": [], "settled": [],
-                                                    "unread": [], "left_fleet": [], "records": [rec], "waiting_on_owner": []}
+                                                    "unread": [], "left_fleet": [], "records": [rec], "waiting_on_owner": [], "moved": []}
         proposed = [did("record.proposed", On=["record/atlas-kit/0021"], Commit=["WilldanGroup/atlas-kit@" + "a" * 40], By="wldn-design")]
         assert self.judged(cards_=[rec], entries=proposed)["gone"] == []
 
@@ -1260,7 +1260,7 @@ class TestSweepJudged:
                   did("card.post", 5, Key="deploy/dev", Refused="Pending You refused post_request: x")]
         assert self.judged(rows=[row("deploy/dev", "operations")], cards_=[p4], entries=recent) == {"gone": [], "questions": [], "held": [], "none": [],
                                                                                                 "again": [], "settled": [], "unread": [], "left_fleet": [],
-                                                                                                "records": [], "waiting_on_owner": []}
+                                                                                                "records": [], "waiting_on_owner": [], "moved": []}
         old = [dict(e, At=iso(plan.CARD_RETRY // 60 + 1)) for e in recent]
         j = self.judged(rows=[row("deploy/dev", "operations")], cards_=[p4], entries=old)
         assert ([c for c, *_ in j["gone"]], j["none"]) == ([p4], [row("deploy/dev", "operations")])
@@ -1319,7 +1319,7 @@ class TestSweepJudged:
         p5 = card("proposal/5", "req_p5", "wldn-planner")
         assert self.judged(cards_=[p5], proposed={1, 2, 3, 4}) == {"gone": [], "questions": [], "held": [], "none": [], "again": [],
                                                                     "settled": [], "unread": [], "left_fleet": [], "records": [],
-                                                                    "waiting_on_owner": []}
+                                                                    "waiting_on_owner": [], "moved": []}
         assert self.judged(cards_=[p5], proposed=None)["gone"] == []
         assert self.judged(cards_=[p5], proposed={4, 5})["gone"] == [(p5, None, "its proposal is closed")]
         assert self.judged(rows=[row("proposal/5")], cards_=[p5], proposed={4, 5})["held"] == [(p5, row("proposal/5"))]
