@@ -317,8 +317,9 @@ def waits_said(env, waits, rowed):
 
 def offers_handed(label, es):
     """The steps each open offer was handed, {env: steps}, read from the files kept beside it where this host keeps
-    them, the drive's main level's (kept); an environment whose offer's files are not on this host is left out, its
-    waits read from the record's marks (deploy_waits). A file crew can't read is left out the same way."""
+    them, the drive's main level's alone (kept); an environment whose offer's files are not on this host is left out,
+    its waits read from the record's marks (deploy_waits). A file crew can't read is left out the same way. No offer
+    open, nothing is read."""
     out = {}
     for env, offer in state(es)[0].items():
         d = kept(label, env, offer["Head"])

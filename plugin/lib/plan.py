@@ -10599,7 +10599,7 @@ def rail_record(fleet, found, props, crossed=None):
         machine = fleet["drives"][l]["machine"]
         mine = [e for e in entries if (e.get("Act") or "").startswith("ops.") and e.get("Host") == machine]
         carded = [e for e in entries if (e.get("Act") or "").startswith("card.") and e.get("Host") == machine]
-        handed = ops.offers_handed(l, mine) if machine == crew.this_host() else None  # an offer's files are kept there alone
+        handed = ops.offers_handed(l, mine)  # an offer's files are kept on the main level's host alone, read there
         deploys += [dict(r, at=utc(r["at"]), doc=None) for r in ops.rows(fleet, l, mine, carded, handed)]
         opses[l] = sorted(mine + [e for e in entries if e.get("Act") == "bolt.land"], key=lambda e: (e["At"], e["Id"]))
     return times, cards, unread, landings, held, deploys, opses, logs
