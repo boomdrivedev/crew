@@ -1614,17 +1614,18 @@ def proposal_card(f):
         return {"id": r["id"], "label": cut(r["label"], LABEL), "detail": by_words(r["detail"], DETAIL),
                 "consequence": by_words(r["went"], DETAIL - len(left)) + left if box else by_words(r["went"], DETAIL)}
     if shape == "approve":
-        how = ("Hold to apply it whole; to keep a unit it drops or amends, decline with a note." if also and not session
-               else "Hold to apply it whole.")
+        how = ["Hold to apply it whole; to keep a unit it drops or amends, decline with a note." if also and not session
+               else "Hold to apply it whole."]
         form = dict(kind="approve", intent="approve", recommendedIds=["approve"],
                     approve={"action": f"Apply the plan change to {to}", "risk": "low", "reversible": True})
     elif shape == "choice":
         r = rows[0]
-        how = "Its one new unit is set as proposed; pick the other side and send to leave it out."
-        options = [option(r), {"id": "unticked", "label": cut(f"Leave {r['unit']} out", LABEL)}]
+        how = []  # its two choices say what happens
+        options = [option(r, box=False), {"id": "unticked", "label": cut(r["leave"], LABEL),
+                                          "consequence": by_words(r["left"][0].upper() + r["left"][1:], DETAIL)}]
         form = dict(kind="choice", intent="decide", options=options, recommendedIds=[r["id"]])
     else:
-        how = "Each new unit below is ticked; clear any to leave it out, and send."
+        how = ["Each new unit below is ticked; clear any to leave it out, and send."]
         g = -(-len(rows) // BOXES)
         sizes = [len(rows) // g + (1 if k < len(rows) % g else 0) for k in range(g)]
         groups = [rows[sum(sizes[:k]):sum(sizes[:k + 1])] for k in range(g)]
@@ -1635,13 +1636,13 @@ def proposal_card(f):
                      questions=[dict(id=f"rows-{k}", kind="multi", title=f"The change, part {k} of {g}: each row as proposed", **q)
                                 for k, q in enumerate(lists, 1)]))
     if shape != "approve" and also:
-        how += " What it drops or amends applies with it."
+        how.append("What it drops or amends applies with it.")
     staying = list(dict.fromkeys(a.bolt for a in argvs if stays_of(a)))  # each bolt it marks to stay, said on its face
     if staying:
-        how += f" {joined(staying)} {'stays' if len(staying) == 1 else 'stay'} unlanded until your send of its landings card."
+        how.append(f"{joined(staying)} {'stays' if len(staying) == 1 else 'stay'} unlanded until your send of its landings card.")
     case = prose(f["case"], 10 ** 6)
     said = ((f"Read it all in one session: {f['session']}\n\n" if f.get("session") else "")
-            + f"{SENTENCE.split(case)[0] if case else ''} {how}")
+            + " ".join([SENTENCE.split(case)[0] if case else ""] + how))
     paragraphs = []
     for u, a in units.items():
         if a.sub == "drop":

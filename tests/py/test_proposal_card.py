@@ -192,14 +192,33 @@ def test_a_lone_row_is_the_choice_of_its_two_sides_since_a_list_holds_two_at_lea
     c = b["card"]
     assert c["title"] == "Plan change to the switchboard-kit queue: 1 new"
     assert (c["kind"], [o["id"] for o in c["options"]], c["recommendedIds"]) == ("choice", ["add:g-one", "unticked"], ["add:g-one"])
-    assert c["options"][1]["label"] == "Leave g-one out"
-    assert c["summary"] == "One more unit, queued. Its one new unit is set as proposed; pick the other side and send to leave it out."
+    assert [(o["label"], o.get("consequence")) for o in c["options"]] == [
+        ("Queue g-one for later", "It waits in the switchboard-kit queue until a bolt takes it."),
+        ("Leave g-one out", "It is not added to the plan.")]
+    assert c["summary"] == "One more unit, queued."
     dropped = built(5, "x.", 'unit drop c-third "Not needed now."')["card"]
     assert (dropped["kind"], "options" not in dropped) == ("approve", True)
     assert dropped["summary"].endswith("decline with a note.")
     beside = built(5, "x.", 'unit drop c-third "Not needed now."', 'unit add g-one "One unit." --bolt deploys')["card"]
     assert ([o["id"] for o in beside["options"]], beside["recommendedIds"]) == (["add:g-one", "unticked"], ["add:g-one"])
-    assert beside["summary"].endswith("send to leave it out. What it drops or amends applies with it.")
+    assert beside["summary"] == "x. What it drops or amends applies with it."
+
+
+def test_a_lone_unit_moved_into_a_bolt_the_proposal_starts_starts_now_or_stays_queued():
+    """plan-proposals "Into a bolt the proposal starts" and "A lone unit moved from a queue", in proposal 73's shape: a
+    new bolt, a queued unit moved into it, and the bolt started. The plan it leaves is built without the start, which
+    asks a runner the fixture has not; starts is read from the commands."""
+    def queued():
+        return FactsWrite(plan_text(bolts=[("deploys", KIT, None)], units=[("a-first", KIT, "deploys", []), ("q-one", KIT, None, [])]))
+    dos = ('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move q-one y", "bolt start y")
+    b = cards.proposal_card(dict(n=73, state="open", case="The queued unit starts now in a bolt of its own.", before=queued().plan,
+                                 after=apply(queued(), *dos[:2]).plan, argvs=[plan.do_args("wldn", d) for d in dos], session=None))
+    c = b["card"]
+    assert (c["kind"], [o["id"] for o in c["options"]], c["recommendedIds"]) == ("choice", ["add:q-one", "unticked"], ["add:q-one"])
+    assert [(o["label"], o["consequence"]) for o in c["options"]] == [
+        ("Start q-one now", "It moves into bolt y, which this change starts, and is built now."),
+        ("Leave q-one out for now", "It stays in the switchboard-kit queue.")]
+    assert c["summary"] == "The queued unit starts now in a bolt of its own."
 
 
 def test_seven_new_units_are_two_lists_of_four_and_three_on_one_card():
