@@ -6,14 +6,47 @@ waits. One due an end instead, a main level's agent whose role now runs as its k
 same way and ended, never started again. The end of a turn is the agent's own
 good point to stop: whatever it was doing is done or handed to the background, and nothing it says is cut off.
 
-The reviewer, started fresh for each batch, and any session crew never started cost one file lookup and are left alone; so is every agent while its
-host is held, whose crew go restarts what is due. The hook never fails a turn and says nothing to the agent."""
+The reviewer, started fresh for each batch, is left alone; so is every agent while its host is held, whose crew go
+restarts what is due. A session crew did not start, the user's own, a Flume place's or a role's run the user opened,
+that loaded crew's plugin from a build whose release names another commit than the installed crew's is offered its
+restart once for each install (crew.offer_due, host-holds-and-updates "A session on an older build of crew is offered a
+restart at the end of its turn"): one message shown to the person, the hook's systemMessage, naming both versions and the
+session's id, which gives the model nothing; the session's mark under crew.OFFERS keeps a later turn, while the install
+has not moved, to file reads alone. A session loaded from a checkout is offered nothing. The hook never fails a turn and
+says nothing to the agent."""
 import json
+import os
 import pathlib
 import re
 import sys
 
 LIB = pathlib.Path(__file__).resolve().parent.parent / "lib"
+
+
+def offer(sid):
+    """Offer a session that is no crew agent its restart where it runs an older build of crew (crew.offer_due), once for
+    each real path of the installed command, marked under crew.OFFERS."""
+    if (LIB.parent.parent / ".git").exists():  # loaded from a checkout: offered nothing, and git is never asked
+        return
+    sys.path.insert(0, str(LIB))
+    import crew
+    loaded = crew.crew_read()
+    if loaded["from"] != "release":
+        return
+    cmd = crew.installed_here()
+    if cmd is None:
+        return
+    real, mark = os.path.realpath(cmd), crew.OFFERS / sid
+    try:
+        offered_for = mark.read_text().strip()
+    except OSError:
+        offered_for = None
+    if offered_for == real:
+        return
+    installed = crew.installed()
+    if crew.offer_due(loaded, installed, offered_for, real):
+        crew.write_whole(mark, real + "\n")
+        print(json.dumps({"systemMessage": crew.offer_said(loaded, installed, sid)}))
 
 
 def main():
@@ -25,10 +58,11 @@ def main():
     if not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9-]+", sid) or hook.get("agent_id"):
         return
     record = pathlib.Path.home() / ".local/state/crew/sessions" / sid
-    if not record.is_file():
+    name = dict(l.split("=", 1) for l in record.read_text().splitlines() if "=" in l).get("CREW_AGENT") if record.is_file() else None
+    if not name:
+        offer(sid)
         return
-    name = dict(l.split("=", 1) for l in record.read_text().splitlines() if "=" in l).get("CREW_AGENT")
-    if not name or name.endswith("-reviewer"):
+    if name.endswith("-reviewer"):
         return
     sys.path.insert(0, str(LIB))
     import crew

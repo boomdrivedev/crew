@@ -103,17 +103,6 @@ Whoever holds the host's follower lock SHALL follow on the crew the host has ins
 - **WHEN** the follower runs from crew's checkout, which is the installed command
 - **THEN** it asks nothing and starts nothing again for it
 
-### Requirement: A follower starts again for its crew only on what it read
-A follower that cannot read its own crew's commit or the installed crew's SHALL follow as it is, starting nothing again on a guess. One started again as the installed crew for running another that still reads another SHALL say so once and follow as it is, never starting again for it twice.
-
-#### Scenario: The installed crew can't be read
-- **WHEN** the follower runs a build and the installed command does not answer `crew _release`
-- **THEN** it follows as it is and starts nothing again
-
-#### Scenario: Started again and still another
-- **WHEN** a follower started again as the installed crew for running another still reads its own release as another commit than the installed crew's
-- **THEN** it says once that it follows as it is, and does not start again for it
-
 ### Requirement: The planner's and ops's bands show what places wait on them for
 `board.agent_views` SHALL give the planner's band each launched place that stopped short asking or waits on its caller, past its kind's bound among them whatever stage it last delivered, with its question or Flume's words and the stage it waits to retry or its submission. It SHALL give main-level ops's band each fix of main and each take-main fix in flight with its stage. crew's mod SHALL draw both above the agent's prompt.
 

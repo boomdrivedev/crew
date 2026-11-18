@@ -357,3 +357,18 @@ A land the runner answered refused while Flume's status of the bolt's base place
 #### Scenario: A land that waits
 - **WHEN** the runner answered land 57 of `y`, posted at `abc1234`, refused, Flume's status of `y`'s base place naming `fix--y-1` on `bolt/y`
 - **THEN** the run record holds one `bolt.submit` on `bolt/y` with `Outcome: waiting`, `Request: 57`, `Head` `abc1234`'s commit and Flume's words as `Why`, and no `Refused` or `Submission`, however often it is read
+
+### Requirement: A followed record that moves prints each entry once
+When `crew events --follow` starts again through the installed command, it SHALL hand its new process the day its follow began and the tip of each drive's branch it last printed to. The new process SHALL take what each handed tip holds as printed, and print each entry after it once. Where a handed tip can't be read, it SHALL say so once and follow that drive from its branch as it stands.
+
+#### Scenario: An entry arrives while the follow moves
+- **WHEN** `crew events --follow --label wldn` starts again through the installed command, and an entry reaches wldn's branch after its last read and before its new process's first
+- **THEN** the new process prints that entry once, and prints no entry the old process printed
+
+#### Scenario: A handed tip crew can't read
+- **WHEN** the tip the follow handed on for wldn is not in crew's cache of wldn's state repository
+- **THEN** the new process says once that it can't read where the follow was, and follows wldn from its branch as it stands, printing nothing of what is there
+
+#### Scenario: A follow with nothing handed
+- **WHEN** `crew events --follow --label wldn` starts with nothing handed to it
+- **THEN** its first read of wldn's branch prints nothing, as before

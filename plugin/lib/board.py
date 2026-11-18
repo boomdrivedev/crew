@@ -1030,10 +1030,13 @@ def read_frame(label):
 
 def follow(label, once=False):
     """The board tab: the latest frame drawn at the pane's width, again whenever the frame, the pane's size or how
-    stale the frame is changes; checked once a second."""
+    stale the frame is changes; checked once a second, and after each draw the tab starts again through the installed
+    command, as `crew _board <label>`, once the installed crew names another commit than the one it started on
+    (crew.Lasting). With once, one draw, moving nothing."""
     tty = sys.stdout.isatty()
     color = tty and not os.environ.get("NO_COLOR")
     seen, data, mtime = None, None, False
+    lasting = None if once else crew.Lasting(f"crew's board tab of {label}")
     while True:
         try:
             m = frame_path(label).stat().st_mtime_ns
@@ -1050,6 +1053,7 @@ def follow(label, once=False):
             sys.stdout.flush()
         if once:
             return
+        lasting.look(sys.argv[1:])
         time.sleep(1)
 
 
@@ -1304,17 +1308,8 @@ def crew_stamp():
     return os.path.realpath(cmd) if cmd else None
 
 
-def behind(mine, theirs):
-    """Whether a follower runs a crew other than the one its host has installed (crew-board "A follower follows on the
-    crew its host has installed"), from crew_read's facts of each (code.7): True when both name a commit and the commits
-    differ, False when they name one, and None when either names none, which starts nothing again on a guess (read.1)."""
-    if not (mine or {}).get("commit") or not (theirs or {}).get("commit"):
-        return None
-    return mine["commit"] != theirs["commit"]
-
-
 def behind_here():
-    """Whether this process follows on a crew other than the one its host has installed (behind): False, read with no
+    """Whether this process follows on a crew other than the one its host has installed (crew.behind): False, read with no
     process, where the installed command is this crew's own, as a checkout's always is, or the host has none, since
     then there is no other crew to follow on; else this build's release against the installed crew's answer to crew
     _release, asked once for each real path of the installed command (crew.installed), so a follower asks again only
@@ -1322,7 +1317,7 @@ def behind_here():
     cmd = crew.installed_here()
     if cmd is None or crew.own_command(cmd):
         return False
-    return behind(crew.crew_read(), crew.installed())
+    return crew.behind(crew.crew_read(), crew.installed())
 
 
 def moved_at():
@@ -1513,9 +1508,9 @@ class Follower:
         self.asked, self.asked_at_tick = {}, {}
         # what handing out the restarts said before the follower started again as the new crew (again)
         self.updated = json.loads(os.environ.pop("CREW_FOLLOWER_UPDATED", "") or "{}")
-        # whether this process was started again as the installed crew for running another (again's lag), and whether
-        # it has said that it still runs another (lagging)
-        self.started_lagging, self.said_lag = os.environ.pop("CREW_FOLLOWER_LAGGED", None) == "1", False
+        # whether it has said that it was started again for the installed commit and still runs another (lagging); the
+        # installed commit it was started again for is crew.MOVED_TO's, which every lasting process carries
+        self.said_lag = False
         # Pending You's notice while a role here runs as its kind (hear), None while it runs none
         self.notice = None
         # the repositories whose main the clock fetches, those of the started bolts of the last read (kit_mains)
@@ -1777,25 +1772,28 @@ class Follower:
                          stamps=dict(self.last["stamps"], readings=stamps["readings"], cards=self.cards))
 
     def lagging(self):
-        """Whether this follower is to start again as the installed crew before it reads, running another (behind_here):
-        never once it was started again for that and still runs another, as a crew whose release disagrees with its own
-        answer to crew _release would, which it says once and follows on as it is rather than start again for ever."""
+        """Whether this follower is to start again as the installed crew before it reads, running another (behind_here),
+        once for each install (crew.move_due, host-holds-and-updates "A lasting process moves for an install only on
+        what it read"): never while it was started again for the installed commit (crew.MOVED_TO) and still runs
+        another, as a crew whose release disagrees with its own answer to crew _release would, which it says once and
+        follows on as it is, moving again once the installed crew names another commit. The installed crew is read only
+        where it lags, so a checkout's follower asks nothing."""
         lag = behind_here()
-        if lag and self.started_lagging:
-            if not self.said_lag:
-                print(f"crew's follower on {crew.this_host()} was started again as the crew the host has installed and still "
-                      "runs another, its release not the one the installed crew names: it follows as it is", file=sys.stderr)
-                self.said_lag = True
-            return False
-        return lag
+        what = crew.move_due(lag, os.environ.get(crew.MOVED_TO), crew.installed()["commit"] if lag else None)
+        if what == "stuck" and not self.said_lag:
+            print(f"crew's follower on {crew.this_host()} was started again as the crew the host has installed and still "
+                  "runs another, its release not the one the installed crew names: it follows as it is", file=sys.stderr)
+            self.said_lag = True
+        return what == "move"
 
     def again(self, fleet, lag=False):
         """crew's checkout, the crew the host has installed or the teams file moved, or the follower runs a crew other
-        than the installed one (lag, behind_here): each drive's agents here that it made due a restart are handed
+        than the installed one (lag, lagging): each drive's agents here that it made due a restart are handed
         theirs by the installed crew (crew _update, teams.19), and the follower starts again as the new crew, its lock
-        handed on and what the update said with it, and whether it started again for running another: through the
-        installed command where it is not crew's own, as after an install of a build, else as this crew's board.py; the
-        kept read goes with this process. When it can't start again it reads afresh here."""
+        handed on and what the update said with it, and the installed commit it started again for (crew.MOVED_TO, empty
+        where unread), for an update as for a lag: through the installed command where it is not crew's own, as after
+        an install of a build, else as this crew's board.py; the kept read goes with this process. When it can't start
+        again it reads afresh here."""
         installed = crew.installed_here()
         cmd = ["bash", installed or crew.crew_command()]
         updated = {l: subprocess.run(cmd + ["_update", "--label", l], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True).stdout.strip() or None
@@ -1805,13 +1803,14 @@ class Follower:
             os.set_inheritable(self.lock.fileno(), True)
             sys.stdout.flush()
             env = dict(os.environ, CREW_FOLLOWER_LOCK=str(self.lock.fileno()), CREW_FOLLOWER_UPDATED=json.dumps(updated),
-                       CREW_FOLLOWER_LAGGED="1" if lag else "0")
+                       **{crew.MOVED_TO: crew.installed_commit() or ""})
             if installed and not crew.own_command(installed):
                 os.execvpe("bash", ["bash", installed, *sys.argv[1:]], env)
             else:
                 os.execve(sys.executable, [sys.executable, str(LIB / "board.py"), *sys.argv[1:]], env)
         except OSError as e:
-            print(f"crew's follower could not start again as the new crew ({e.strerror or e}); it reads afresh as it is", file=sys.stderr)
+            print(f"crew's follower could not start again as the {'installed' if lag else 'new'} crew ({e.strerror or e}); it reads afresh "
+                  "as it is", file=sys.stderr)
             self.updated, self.last = updated, None
 
     def write(self, fleet):
@@ -1873,10 +1872,13 @@ def rail_follow(label, once=False):
     """The rail tab: the latest rail frame drawn whenever it changes, or how stale it is does; checked once a second.
     Each second, while no one follows on the host, it takes the follower lock without waiting and is the host's
     follower itself, for every drive with an operator session here, on the follower's clock and look (Follower); so a
-    tab drawing the job's frames follows itself within a second of the job ending. With once, one draw, following
-    nothing."""
+    tab drawing the job's frames follows itself within a second of the job ending. While it holds no lock, after each
+    draw it starts again through the installed command, as `crew _rail <label>`, once the installed crew names another
+    commit than the one it started on (crew.Lasting); one holding the lock leaves its move to its follower
+    (Follower.lagging). With once, one draw, following and moving nothing."""
     tty = sys.stdout.isatty()
     seen, data, mtime, follower = None, None, False, None
+    lasting = None if once else crew.Lasting(f"crew's rail tab of {label}")
     try:
         while True:
             try:
@@ -1897,6 +1899,8 @@ def rail_follow(label, once=False):
                 follower = Follower(lock) if lock else None
                 if follower:
                     signal.signal(signal.SIGUSR1, lambda *_: follower.tick_now())
+                else:
+                    lasting.look(sys.argv[1:])
             if follower:
                 follower.step(1)
             else:

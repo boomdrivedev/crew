@@ -2604,7 +2604,9 @@ def installed():
     """The crew this host has installed, as facts of crew_read's shape: crew_read of its own root with no process where
     the installed command is crew's own; unread where there is none; otherwise its answer to `crew _release`, asked
     within RELEASE_ASKED seconds, once for each real path of the command (ASKED), an answer late, failed or missing a
-    field unread with its why."""
+    field unread with its why. Where the command's real path is in the Nix store, which names one build for ever, the
+    host keeps its read answer (kept_path) and a process reads it there before it asks (host-holds-and-updates "The host
+    keeps each installed build's answer"); an unread answer, or one from outside the store, is never kept."""
     cmd = installed_here()
     if cmd is None:
         return unread_crew(NONE_INSTALLED)
@@ -2612,8 +2614,187 @@ def installed():
         return crew_read()
     real = os.path.realpath(cmd)
     if real not in ASKED:
-        ASKED[real] = ask_release(cmd)
+        kept = kept_answer(real)
+        ASKED[real] = kept or ask_release(cmd)
+        if kept is None:
+            keep_answer(real, ASKED[real])
     return ASKED[real]
+
+
+# Where the host keeps each installed build's answer to `crew _release`, by its command's real path (kept_path): a
+# derived cache of things that never change, thrown away with no loss (state.4).
+KEPT = pathlib.Path.home() / ".cache/crew/installed"
+
+
+def kept_path(real):
+    """Where the host keeps the answer of the installed command whose real path is real: None outside the Nix store,
+    whose answer can change under the same path; else a file named by the first 32 hexadecimal characters of the path's
+    SHA-256."""
+    if not real.startswith(STORE):
+        return None
+    return KEPT / f"{hashlib.sha256(real.encode()).hexdigest()[:32]}.json"
+
+
+def kept_answer(real):
+    """The answer the host keeps for real (kept_path), read field by field as an answer is (release_said), or None where
+    it keeps none or what it keeps can't be read, which is asked again."""
+    path = kept_path(real)
+    try:
+        text = path.read_text() if path else None
+    except OSError:
+        return None
+    return release_said(text)[0] if text is not None else None
+
+
+def keep_answer(real, got):
+    """Keep a read answer for real where its path is in the store (kept_path), written whole and renamed into place; a
+    file crew can't write keeps nothing and stops nothing, the answer asked again by the next process."""
+    path = kept_path(real)
+    if path is None or got.get("unread") is not None:
+        return
+    try:
+        write_whole(path, json.dumps(got) + "\n")
+    except OSError:
+        pass
+
+
+def write_whole(path, text):
+    """A file written whole and renamed into place, its folder made where missing, so no reader sees half of it."""
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = path.with_name(f".{path.name}.{os.getpid()}.new")
+    try:
+        new.write_text(text)
+        os.replace(new, path)
+    finally:
+        new.unlink(missing_ok=True)
+
+
+def behind(mine, theirs):
+    """Whether a process runs a crew other than the one its host has installed (host-holds-and-updates "Each lasting
+    process of crew's moves to the installed crew by itself"), from crew_read's facts of each (code.7): True when both
+    name a commit and the commits differ, False when they name one, and None when either names none, which starts nothing
+    again on a guess (read.1)."""
+    if not (mine or {}).get("commit") or not (theirs or {}).get("commit"):
+        return None
+    return mine["commit"] != theirs["commit"]
+
+
+# The installed commit a lasting process was started again for (move_here), handed on in its environment so that it
+# moves once for each install (move_due).
+MOVED_TO = "CREW_MOVED_TO"
+
+
+def move_due(lag, moved_to, installed):
+    """What a lasting process does at its look (host-holds-and-updates "A lasting process moves for an install only on
+    what it read"), from behind's answer (lag), the installed commit it was started again for (moved_to, MOVED_TO's, or
+    None) and the installed commit now (code.7): None, it runs on as it is, where the lag is not True, either commit
+    unread or both the same; "stuck", it says once that it runs on as it is, where it lags and was already started again
+    for this installed commit; else "move", started again through the installed command."""
+    if lag is not True:
+        return None
+    return "stuck" if moved_to and moved_to == installed else "move"
+
+
+def started_commit():
+    """The commit of the crew this process started on, read once at a lasting process's start: on a checkout its HEAD,
+    read from its files (head_here), so a process follows the checkout as the follower does; on a build its release's
+    commit (crew_read), a file read; None where neither names one."""
+    if (HOME / ".git").exists():
+        return head_here()
+    return crew_read()["commit"]
+
+
+def installed_commit():
+    """The commit of the crew this host has installed, read with no process while the install has not moved: where the
+    installed command is this crew's own checkout, its HEAD now (head_here); else the installed crew's (installed),
+    asked at most once for each real path of its command and kept on the host for a build; None where the host has
+    none or it can't be read (read.1)."""
+    cmd = installed_here()
+    if cmd is None:
+        return None
+    if (HOME / ".git").exists() and own_command(cmd):
+        return head_here()
+    return installed()["commit"]
+
+
+def lasting_look(started):
+    """What a lasting process does at its look, from the commit it started on (started_commit): ("move", installed),
+    ("stuck", installed) or (None, installed), from move_due over behind and the installed commit it was started again
+    for (MOVED_TO), with the installed commit read once (installed_commit)."""
+    installed = installed_commit()
+    return move_due(behind({"commit": started}, {"commit": installed}), os.environ.get(MOVED_TO), installed), installed
+
+
+class Lasting:
+    """A lasting process's moves to the installed crew (host-holds-and-updates "Each lasting process of crew's moves to
+    the installed crew by itself"): the commit it started on, read once at its start (started_commit), and at each look
+    (lasting_look) a start again through the installed command with its own arguments (move_here) where one is due, or,
+    stuck, its name's line said once on standard error, the process running on as it is."""
+
+    def __init__(self, name):
+        self.name, self.started, self.said = name, started_commit(), False
+
+    def look(self, argv, env=None):
+        """One look: what it did, "move" (returning only where the start again failed), "stuck" or None. env, a
+        callable, gives what the move hands on, asked only for a move."""
+        what, installed = lasting_look(self.started)
+        if what == "move":
+            move_here(argv, installed, env() if env else None)
+        elif what == "stuck" and not self.said:
+            print(f"{self.name} was started again as the crew the host has installed and still runs another, its "
+                  "release not the one the installed crew names: it runs on as it is", file=sys.stderr)
+            self.said = True
+        return what
+
+
+# Each session crew offered its restart, by its id, holding the real path of the installed command it was offered for
+# (offer_due), so it is offered once for each install.
+OFFERS = pathlib.Path.home() / ".local/state/crew/offers"
+
+
+def offer_due(loaded, installed, offered_for, real):
+    """Whether a session that is no crew agent is offered its restart at the end of its turn (host-holds-and-updates "A
+    session on an older build of crew is offered a restart at the end of its turn", "A session is offered its restart
+    once for each install"), from what it loaded (crew_read of its plugin's root), the installed crew (installed), the
+    real path of the installed command it was last offered for (its mark, None where it has none) and that real path
+    now (code.7): only where it loaded a build, read from a release, has not been offered for this real path, and runs
+    another commit than the installed crew's (behind); an unread fact offers nothing (read.1)."""
+    if (loaded or {}).get("from") != "release" or not real or offered_for == real:
+        return False
+    return behind(loaded, installed) is True
+
+
+def offer_said(mine, theirs, session):
+    """The offer in plain words: the version the session runs and the version installed, each its commit's first seven
+    characters where it names none, and that exiting and resuming the conversation, named by its id, runs the installed
+    crew there."""
+    def named(c):
+        return c.get("version") or (c.get("commit") or "")[:7]
+    return (f"This session runs crew {named(mine)}, and {named(theirs)} is installed. To run {named(theirs)} here, exit "
+            f"and resume this conversation (session {session}).")
+
+
+# The installed commits a move could not start again for (move_here), which this process does not try again.
+MOVE_FAILED = set()
+
+
+def move_here(argv, moved_to, env=None):
+    """Start this lasting process again through the installed command with its own arguments (argv: `_board wldn`,
+    `_rail wldn`, `events --follow --label wldn`), in its own process, which keeps its id, so its pane still reads as
+    crew's and a signal sent to it still reaches it; its environment carries MOVED_TO, the installed commit it moved
+    for (move_due), and env, what it hands on. Where the exec fails it says so once on standard error and returns, the
+    process running on as it is, and tries no more for that installed commit."""
+    if moved_to in MOVE_FAILED:
+        return
+    try:
+        sys.stdout.flush()
+        os.execvpe("bash", ["bash", installed_here() or crew_command(), *argv],
+                   os.environ | {MOVED_TO: moved_to or ""} | (env or {}))
+    except OSError as e:
+        MOVE_FAILED.add(moved_to)
+        print(f"crew could not start {' '.join(argv)} again as the installed crew ({e.strerror or e}); it runs on as it is",
+              file=sys.stderr)
 
 
 def ask_release(cmd):

@@ -5,7 +5,8 @@
 # each back with its conversation, greeted; crew update hands each standing agent an update made due its restart, which
 # brings it back on crew as it now is, told so; crew's Stop hook does the same at the end of a due agent's turn; --now
 # ends every agent at once; and a standing agent whose role now runs as its kind is passed over by crew update and
-# ended at its turn's end, never started again.
+# ended at its turn's end, never started again; and a session crew did not start, on an older build of crew than the
+# host's installed one, is offered its restart by the Stop hook once for each install.
 # What makes an agent due, what keeps a host from being quiet, when a due agent may be restarted and what the bands
 # say are logic cases (tests/py/test_hold.py).
 # Reads: plugin/hooks/ plugin/lib/board.py plugin/lib/hold.py plugin/lib/ops.py tests/journeys.sh
@@ -154,3 +155,24 @@ expect_ok crew update $box
 HOST=$box expect_ok crew revive
 eq "$(launches)" ""
 ok "a standing planner whose role now runs as its kind is passed over by crew update and ended at the end of its turn, its pane left, and nothing starts it again"
+
+# A session crew did not start, its plugin a build of crew v0.59.0 with no git, while the host's installed crew, first on
+# its path, is v0.67.1: at the end of its turn the Stop hook shows the person its offer once, as a systemMessage naming
+# both versions and the session, and the next turn's end shows nothing.
+build=$T/build
+mkdir -p "$build/plugin/hooks" "$build/plugin/lib" "$T/profile/bin"
+cp "$CREW/plugin/hooks/stop" "$build/plugin/hooks/"
+cp "$CREW/plugin/lib/crew.py" "$CREW/plugin/lib/source.py" "$CREW/plugin/lib/questions.py" "$CREW/plugin/lib/transcript.py" "$build/plugin/lib/"
+echo '{"commit": "1111111111111111111111111111111111111111", "version": "0.59.0"}' > "$build/plugin/release.json"
+cat > "$T/profile/bin/crew" <<'CREW'
+#!/bin/sh
+[ "$1" = _release ] && echo '{"root": "/nix/store/def-crew", "commit": "2222222222222222222222222222222222222222", "version": "v0.67.1", "from": "release", "unread": null}'
+CREW
+chmod +x "$T/profile/bin/crew"
+offered() { echo '{"session_id":"s-offer-1"}' | as $box env PATH="$T/profile/bin:$PATH" python3 "$build/plugin/hooks/stop" 2>&1; }
+out=$(offered)
+eq "$(jq -r .systemMessage <<<"$out")" "This session runs crew v0.59.0, and v0.67.1 is installed. To run v0.67.1 here, exit and resume this conversation (session s-offer-1)."
+eq "$(jq -r 'keys | join(",")' <<<"$out")" "systemMessage"
+eq "$(cat "$(home_of $box)/.local/state/crew/offers/s-offer-1")" "$(cd "$T/profile/bin" && pwd -P)/crew"
+eq "$(offered)" ""
+ok "the Stop hook offers a session crew did not start on an older build its restart once, naming both versions and the session"

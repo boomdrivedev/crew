@@ -540,3 +540,34 @@ class TestGoOpensTheConsoles:
         hold.go(fleet, argparse.Namespace())
         assert opened == [("up", "wldn"), ("up", "agentplot")]
         assert "deneb is no longer held" in capsys.readouterr().out
+
+
+class TestOffer:
+    """host-holds-and-updates "A session on an older build of crew is offered a restart at the end of its turn" and "A
+    session is offered its restart once for each install": a session that is no crew agent and loaded a build of crew
+    whose release names another commit than the installed crew's is offered its restart once for each real path of the
+    installed command (crew.offer_due), in plain words (crew.offer_said). That the Stop hook shows it once, as a
+    systemMessage, is the hold journey's (t-hold)."""
+
+    REAL, LATER = "/nix/store/def-crew/bin/crew", "/nix/store/ghi-crew/bin/crew"
+
+    @pytest.mark.parametrize("loaded, installed, offered_for, real, due", [
+        (build(C1, "v0.59.0"), build(C2, "v0.67.1"), None, REAL, True),
+        (build(C1, "v0.59.0"), build(C2, "v0.67.1"), REAL, REAL, False),
+        (build(C1, "v0.59.0"), build(C2, "v0.67.1"), LATER, REAL, True),
+        (checkout(C1), build(C2, "v0.67.1"), None, REAL, False),
+        (crew.unread_crew("no release file"), build(C2, "v0.67.1"), None, REAL, False),
+        (dict(build(None, "v0.59.0")), build(C2, "v0.67.1"), None, REAL, False),
+        (build(C1, "v0.59.0"), UNREAD, None, REAL, False),
+        (build(C1, "v0.59.0"), build(C2, "v0.67.1"), None, None, False),
+        (build(C2, "v0.67.1"), build(C2, "v0.67.1"), None, REAL, False)])
+    def test_an_offer_is_due_once_for_each_install(self, loaded, installed, offered_for, real, due):
+        assert crew.offer_due(loaded, installed, offered_for, real) is due
+
+    def test_the_offer_names_both_versions_and_the_session(self):
+        assert crew.offer_said(build(C1, "v0.59.0"), build(C2, "v0.67.1"), "9713fedb-aa") == (
+            "This session runs crew v0.59.0, and v0.67.1 is installed. To run v0.67.1 here, exit and resume this "
+            "conversation (session 9713fedb-aa).")
+        said = crew.offer_said(build(C1, None), build(C2, "0-unstable-2026-11-18+2222222"), "s-1")
+        assert said.startswith("This session runs crew 1111111, and 0-unstable-2026-11-18+2222222 is installed.")
+        assert "(session s-1)" in said
