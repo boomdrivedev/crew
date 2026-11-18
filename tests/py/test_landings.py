@@ -3377,6 +3377,35 @@ def test_a_bolt_a_spent_kept_send_held_at_its_stops_head_is_asked_on_the_card(mo
     assert "Its last landing at abc1234 was stopped, nothing of the bolt's" in json.dumps(post) and "(203)" in json.dumps(post)
 
 
+def test_the_rail_read_raises_a_kit_whose_bolt_a_spent_kept_send_held(monkeypatch):
+    """rail-cards "Proven again at a new head" and "Beside a card waiting on the user" (a-stopped-bolt-proven-again-lands,
+    Decisions 2 and 4): the signal's case, y's land on req_k1's kept send stopped and y proven at def5678 with its own
+    work unchanged: the rail's read raises crew for y on proof, whose raise posts y's land on proof, and the read after
+    it raises none. z, marked to stay, its land on req_k1's kept send stopped at abc1234 where it still stands, beside
+    req_k2 waiting on the user showing y: the read names z unoffered, and the raise changes req_k2 to ask for z."""
+    entries, lands = spent_kept("y", 1)
+    land = proof_acts(monkeypatch, {"y": row("y", H2)}, entries, drive=entries, lands=lands, works={"y": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    got = plan.sweep_moved(FLEET, proof_read([("y", H2, True)], {"y": "proof"}, logs=entries), SweepActs(land))
+    assert got == {"raised": [dict(label="swancloud", kit="crew", was=None, now=None, card=None, said=None, sent=False, rows=[],
+                                   proven=["y"])], "unread": []}
+    assert [(on, f["Form"], f["Head"]) for _, _, on, f, _ in land.posts] == [(["bolt/y"], "proof", H2)]
+    acts = SweepActs(land)
+    assert plan.sweep_moved(FLEET, proof_read([("y", H2, True)], {"y": "proof"}, logs=land.held), acts) == {"raised": [], "unread": []}
+    assert acts.raised == [] and len(land.posts) == 1
+    # z at its stop's head beside req_k2 waiting on the user with y: z is unoffered, and the raise asks for it
+    entries, lands = spent_kept("z", 2)
+    entries += [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k2", Heads="y@abc1234")]
+    read = proof_read([("y", H1, True), ("z", H1, True)], {"y": "send", "z": "send"}, ["req_k2"], entries, text=PLAN)
+    assert plan.landings_unoffered(read, "swancloud", "mac-studio", KITS) == [(("swancloud", "crew"), ["z"])]
+    land = proof_acts(monkeypatch, {"y": row("y"), "z": row("z", stopped=(H1, WAIT))}, entries, PENDING, text=PLAN, drive=entries,
+                      lands=lands, reads=TestLandsDue().reads(refused={5: WAIT}))
+    acts = SweepActs(land)
+    got = plan.sweep_moved(FLEET, read, acts)
+    assert acts.raised == ["crew"] and [m["rows"] for m in got["raised"]] == [["z"]]
+    assert getattr(land, "posts", []) == [] and posted_heads(land) == [[("y", "abc1234", False), ("z", "abc1234", False)]]
+
+
 def test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing():
     """rail-cards "Ticked beside two that land" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decisions 3
     and 4): the user sent land/flume ticking x, y and z; x and y landed, and z's land on that send, request 332, was

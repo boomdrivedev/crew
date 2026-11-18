@@ -11062,7 +11062,8 @@ def card_stand(bolt, head, can, card, sends):
     whether it can land; card, the open card under land/<kit> in main-level ops's name as record_reading keeps it, None
     or {card, heads: [(bolt, head7, left)], taking, answered: {heads} or None, spent}, spent the bolts its answer
     ticked whose land that send posted was stopped (send_spent); sends, the sends kept on that key's closed cards,
-    landings_sent's {bolt: head}. ("carries", the head the card shows, or None when it shows the head now) while the card
+    landings_sent's {bolt: head}, which holds no bolt a stop spent its send for (a-stopped-bolt-proven-again-lands,
+    Decision 2). ("carries", the head the card shows, or None when it shows the head now) while the card
     waits on the user and shows the bolt as a row; ("holds",) when the card is answered and its answer ticked the bolt,
     its land on that send not stopped, or a kept send names the bolt and no open card shows it, since a raise leaves out
     exactly the bolts whose send stands (rows_unsent), so no git read is needed to agree with it; ("follows", whether
@@ -11089,7 +11090,8 @@ def unoffered(rows, card, sends):
     its rows as its last post or change recorded them (card_heads), taking those it showed taking main first
     (heads_taking), next those it showed with no box (heads_next), ticked the bolts the user's answer on it ticked, or
     None while it waits on them, spent those it ticked whose land that send posted was stopped (send_spent); sends, the
-    sends kept on that key's closed cards (landings_sent's {bolt: head}). A row is held by a send at its head now when
+    sends kept on that key's closed cards (landings_sent's {bolt: head}), less each bolt a stop spent its send for. A
+    row is held by a send at its head now when
     the card's answer ticked it there, its land on that send not stopped, or a closed card's kept send names it there
     while this card does not show it (card_stand's holds): its land is that send's to post, at the raise that read the
     answer. A row is unoffered when it can land, no send holds it at its head now, and the card shows it on no row, at

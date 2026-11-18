@@ -492,6 +492,35 @@ class TestRows:
         assert plan.card_stand("apex-zones", self.H, True, spent, {}) == ("follows", True)
         assert plan.card_stand("apex-zones", self.H, False, spent, {}) is None
 
+    def test_a_bolt_a_spent_kept_send_held_is_held_by_no_send(self):
+        """crew-rail "A send kept on a closed card whose land was stopped" and rail-cards "Proven again at a new head"
+        (a-stopped-bolt-proven-again-lands, Decisions 2 and 4): land/switchboard-kit's answered card req_k1 closed keeping
+        the user's send for apex-zones at d185a87, and the runner stopped the land of apex-zones that send posted. With no
+        card open, its line says what stopped its last landing and that the next card carries it, not that the send holds
+        it; the same land recorded waiting leaves the send holding it; and apex-zones, not marked to stay, proven at a new
+        head after the stop, lands on proof, its line saying nothing of the send."""
+        k, why = f"land/{KIT}", "flume refused the retry: fix--apex-zones-1 is live (203)"
+
+        def record(outcome, at=BOLT_HEAD):
+            entries = [dict(post("req_k1", k, by="wldn-ops", minutes=1), Heads=f"apex-zones@{at[:7]}"),
+                       dict(Act="card.answer", Card="req_k1", Key=k, By="wldn-ops", Answer="approved", Heads=f"apex-zones@{at[:7]}", At=iso(9)),
+                       dict(Act="bolt.submit", On=["bolt/apex-zones"], Card="req_k1", Head=at, Request="5", Outcome="asked"),
+                       dict(Act="card.close", Card="req_k1", Key=k, By="wldn-ops", Heads=f"apex-zones@{at[:7]}"),
+                       dict(Act="bolt.submit", On=["bolt/apex-zones"], Head=at, Request="5", Outcome=outcome, Why=why)]
+            return {"wldn": plan.record_reading("wldn", entries, the_plan(), NOW - datetime.timedelta(days=14))["held"]}
+        line = f"apex-zones, on {BOX}, in Flume stream wldn: stays: can land on your send of {k}"
+        land, = [r for r in rows(held=record("stopped")) if r["group"] == "land"]
+        assert land["what"][1] == (line + f"; its last landing at d185a87 was stopped, nothing of the bolt's: {why}; it lands on your "
+                                   f"next send; follows: the next card under {k} carries it")
+        assert "held by your send" not in land["what"][1]
+        land, = [r for r in rows(held=record("waiting")) if r["group"] == "land"]
+        assert land["what"][1].endswith(f"held by your send on {k}: crew asks the runner to land it on that send")
+        found = [("wldn", "WilldanGroup/crew-state", "tip", unmarked())]
+        land, = [r for r in plan.rail_rows(FLEET, found, survey(), [], {}, record("stopped", "1111111" + "0" * 33), runs(unmarked()))
+                 if r["group"] == "land"]
+        assert land["what"][1] == (f"apex-zones, on {BOX}, in Flume stream wldn: lands on proof: crew asks the runner to land it in "
+                                   "wldn-ops's name at the next read of the rail on the main level's host")
+
     def test_a_bolt_that_cant_land_and_is_no_row_of_the_card_says_nothing_of_it(self):
         sv = survey()
         sv[BOX]["kits"]["/kit/main"]["bolts"]["apex-zones"]["head"] = "e" * 40
