@@ -24,4 +24,4 @@ Before the first task, sync the tests' venv once: `devenv shell -- moon run test
 
 ## 5. The how-to says so
 
-- [ ] 5.1 README, the crew skill and `plugin/bin/crew`'s usage header say that each tab and the flow reader move to the installed crew by themselves, and that a session crew did not start on an older build is offered its restart once for each install (`docs.2`; Task notes 5.1). Verify `tests/suite t-docs` ends with "0 failed".
+- [x] 5.1 README, the crew skill and `plugin/bin/crew`'s usage header say that each tab and the flow reader move to the installed crew by themselves, and that a session crew did not start on an older build is offered its restart once for each install (`docs.2`; Task notes 5.1). Verify `tests/suite t-docs` ends with "0 failed".
