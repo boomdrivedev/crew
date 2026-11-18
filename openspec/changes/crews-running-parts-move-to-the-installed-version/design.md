@@ -209,6 +209,13 @@ Cases in `tests/py/test_board.py`:
 - `TestRefresh`'s started-for-lag cases read `CREW_MOVED_TO`, and a follower stuck for one install moves once the installed commit changes;
 - new `TestMoves::test_a_rail_tab_without_the_lock_moves_and_one_holding_it_leaves_it_to_its_follower`.
 
+**2.3** `tests/py/test_board.py`, class `TestInstalledCrew`, the two cases that pin which processes `Follower.again` runs. `again` reads the installed commit through `crew.installed_commit()` (**2.2**). That read starts a process only where Decision 2 allows one: the installed command's real path moved and the host keeps no answer for it.
+
+- `test_an_install_hands_out_the_restarts_and_starts_the_follower_again_through_the_installed_crew`: with `crew.ASKED` emptied and no kept answer, `again` runs each drive's `crew _update` and one `crew _release` of the installed command, and starts again carrying the commit that answer names.
+- `test_on_a_checkout_the_follower_starts_again_as_its_own_board`: the checkout's `.git` is a folder whose `HEAD` names a commit, so `again` runs each drive's `crew _update` alone and starts again carrying that HEAD.
+
+The check is the whole class, so every case of `again` in it runs.
+
 **3.1** `plugin/lib/record.py`:
 
 - New `handed(text)`: `CREW_FOLLOWED`'s JSON read field by field, `{"day": "YYYY-MM-DD", "tips": {label: 40-hex}}`, else None.

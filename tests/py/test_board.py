@@ -510,20 +510,25 @@ class TestInstalledCrew:
         assert board.notice_argv() == ["pendingyou", "watch", "--", "bash", str(profile / "crew"), "_answered"]
 
     def test_an_install_hands_out_the_restarts_and_starts_the_follower_again_through_the_installed_crew(self, build, tmp_path, monkeypatch):
+        """An install moved the installed command's real path and the host keeps no answer for it, so again asks the
+        installed crew crew _release once, beside each drive's crew _update, and carries the commit it names
+        (crew.MOVED_TO; design Decisions 2 and 4)."""
         store, home, profile = build
         (profile / "crew").symlink_to(self.built(store, "def-crew"))
+        monkeypatch.setattr(crew, "ASKED", {})
+        release = json.dumps({"root": str(store / "def-crew"), "commit": "b" * 40, "version": "v0.67.1", "from": "release", "unread": None})
         ran, started = [], []
         monkeypatch.setattr(board.subprocess, "run", lambda argv, **kw: ran.append(argv) or
-                            board.subprocess.CompletedProcess(argv, 0, "wldn-ops is due", ""))
-        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: started.append((file, argv, env["CREW_FOLLOWER_LOCK"])))
-        monkeypatch.setattr(board.os, "execve", lambda file, argv, env: started.append((file, argv, env["CREW_FOLLOWER_LOCK"])))
+                            board.subprocess.CompletedProcess(argv, 0, release if argv[-1] == "_release" else "wldn-ops is due", ""))
+        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: started.append((file, argv, env["CREW_FOLLOWER_LOCK"], env[crew.MOVED_TO])))
+        monkeypatch.setattr(board.os, "execve", lambda file, argv, env: started.append((file, argv, env["CREW_FOLLOWER_LOCK"], env[crew.MOVED_TO])))
         monkeypatch.setattr(board.sys, "argv", ["board.py", "_follow"])
         lock = open(tmp_path / "lock", "w")
         f = board.Follower(lock)
         f.labels = ["wldn"]
         f.again({})
-        assert ran == [["bash", str(profile / "crew"), "_update", "--label", "wldn"]]
-        assert started == [("bash", ["bash", str(profile / "crew"), "_follow"], str(lock.fileno()))]
+        assert ran == [["bash", str(profile / "crew"), "_update", "--label", "wldn"], ["bash", str(profile / "crew"), "_release"]]
+        assert started == [("bash", ["bash", str(profile / "crew"), "_follow"], str(lock.fileno()), "b" * 40)]
 
     @pytest.mark.parametrize("mine, theirs, lag", [
         ({"commit": "a" * 40}, {"commit": "b" * 40}, True), ({"commit": "a" * 40}, {"commit": "a" * 40}, False),
@@ -593,19 +598,22 @@ class TestInstalledCrew:
         assert started[-1] == (["bash", str(profile / "crew"), "_rail", "agentplot"], "")
 
     def test_on_a_checkout_the_follower_starts_again_as_its_own_board(self, tmp_path, monkeypatch):
-        (tmp_path / ".git").write_text("gitdir: /elsewhere\n")
+        """On a checkout again carries the checkout's HEAD now as the installed commit, read from its files with no
+        process (crew.installed_commit), and runs only each drive's crew _update."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".git/HEAD").write_text("c" * 40 + "\n")
         monkeypatch.setattr(crew, "HOME", tmp_path)
         ran, started = [], []
         monkeypatch.setattr(board.subprocess, "run", lambda argv, **kw: ran.append(argv) or
                             board.subprocess.CompletedProcess(argv, 0, "", ""))
-        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: started.append(argv))
-        monkeypatch.setattr(board.os, "execve", lambda file, argv, env: started.append(argv))
+        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: started.append((argv, env[crew.MOVED_TO])))
+        monkeypatch.setattr(board.os, "execve", lambda file, argv, env: started.append((argv, env[crew.MOVED_TO])))
         monkeypatch.setattr(board.sys, "argv", ["board.py", "_follow"])
         f = board.Follower(open(tmp_path / "lock", "w"))
         f.labels = ["wldn"]
         f.again({})
         assert ran == [["bash", str(tmp_path / "plugin/bin/crew"), "_update", "--label", "wldn"]]
-        assert started == [[sys.executable, str(board.LIB / "board.py"), "_follow"]]
+        assert started == [([sys.executable, str(board.LIB / "board.py"), "_follow"], "c" * 40)]
 
 
 class TestMoves:
