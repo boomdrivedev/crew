@@ -1088,6 +1088,28 @@ def test_the_bolts_a_followed_send_still_lands_are_no_row_of_any_card_after_it_w
     assert plan.landings_sent([], "land/crew", "swancloud-ops") == {}
 
 
+def test_a_send_kept_on_a_closed_card_holds_no_bolt_a_stop_spent():
+    """rail-cards "A kept send a stop spent" (a-stopped-bolt-proven-again-lands, Decision 2): req_k1 closed keeping the
+    user's send for y and z at abc1234, and the runner stopped z's land on that send. The kept send holds y alone: the
+    raise keeps z a row at def5678 with no words of a send while y lands on that send, and crew card read names y alone
+    among what it still lands. A stop of z's land on proof, or on req_k2's send, spends nothing of req_k1's, and a later
+    close of req_k2 keeping z at def5678 holds z there."""
+    close = dict(Act="card.close", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads="y@abc1234 z@abc1234")
+
+    def stopped(**by):
+        return [dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="asked", **by),
+                dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="stopped", Why=STOP)]
+    spent = [close] + stopped(Card="req_k1")
+    assert plan.landings_sent(spent, "land/crew", "swancloud-ops") == {"y": "abc1234"}
+    for by in (dict(Form="proof"), dict(Card="req_k2")):
+        assert plan.landings_sent([close] + stopped(**by), "land/crew", "swancloud-ops") == {"y": "abc1234", "z": "abc1234"}
+    later = dict(close, Card="req_k2", Heads="z@def5678")
+    assert plan.landings_sent(spent + [later], "land/crew", "swancloud-ops") == {"y": "abc1234", "z": "def5678"}
+    sent = plan.landings_sent(spent, "land/crew", "swancloud-ops")
+    assert plan.rows_unsent([box("y", H2), box("z", H2)], sent, {"y": work(), "z": work()}) == ([box("z", H2)], ["y"], [])
+    assert plan.sent_left(sent, {"y": H2, "z": H2}, {"y", "z"}, {}, {"y": work(), "z": work()}) == (["y"], [])
+
+
 def test_a_sent_bolt_that_only_took_main_in_is_no_row_and_one_whose_work_changed_is_a_row_saying_so():
     """rail-cards "A refused bolt takes main in" and "A fix adds a commit"."""
     sent = {"y": "abc1234", "z": "abc1234"}
@@ -2576,6 +2598,20 @@ class TestLandsDue:
         assert self.due([box("y", H2)], {"bolt/y": ("req_1", H1[:7])}, requests, reads, posted, work={"y": work()}) == []
         assert self.due([box("y", H2)], {"bolt/y": ("req_2", H2[:7])}, requests, reads, posted) == [("bolt/y", 1)]
 
+    def test_a_spent_send_posts_no_land_at_any_head_after_a_later_land(self):
+        """rail-cards "A landing the runner or Flume stopped keeps its box" and "A later land stopped too"
+        (a-stopped-bolt-proven-again-lands, Decision 3): y's land 5 on req_1's send was stopped at abc1234, and its land
+        on proof at def5678, request 6, was stopped too. The row ticked on req_1's send at abc1234, standing at def5678
+        by its own work unchanged, is due nothing, since that send is spent for good; req_2's send at def5678 is due."""
+        from test_runner import rec
+        requests = self.requests(rec(5, "land", "bolt/y", Of=1), rec(6, "land", "bolt/y", Of=1))
+        posted = [dict(work="bolt/y", card="req_1", head=H1[:7], request="5", stopped=True),
+                  dict(work="bolt/y", card=None, head=H2[:7], request="6", stopped=True)]
+        reads = self.reads(refused={5: "flume refused the submission: a place on bolt/y is live",
+                                    6: "flume refused the submission: the merge queue is closed"})
+        assert self.due([box("y", H2)], {"bolt/y": ("req_1", H1[:7])}, requests, reads, posted, work={"y": work()}) == []
+        assert self.due([box("y", H2)], {"bolt/y": ("req_2", H2[:7])}, requests, reads, posted) == [("bolt/y", 1)]
+
     def test_no_land_on_a_send_or_on_proof_while_flume_names_a_place_on_the_branch(self):
         """bolt-teams "A place on the branch at the send" and "A land due on proof" (a-land-waits-while-a-place-on-its-
         bolts-branch-is-live, Decision 2): Flume's status of y's base place names fix--y-notes on bolt/y, a place no launch
@@ -3189,6 +3225,55 @@ def test_a_stop_on_the_send_closes_the_card_and_asks_again_though_the_head_moved
         ("card.close", said, None), ("card.post", None, "z@abc1234")]
 
 
+def test_a_send_is_spent_for_good_once_a_land_it_posted_was_stopped():
+    """rail-cards "A landing the runner or Flume stopped keeps its box" and "A later land stopped too"
+    (a-stopped-bolt-proven-again-lands, Decision 1): y's land 5 on req_k1's send was stopped at abc1234. The send is spent
+    for y whatever was asked of y since, a land on proof at def5678 and its stop among them, with the head and words of
+    its own stop; a stop of a land on proof or on another card's send spends none of it; a stop naming no request is
+    matched at its head; one crew can't place spends it only as y's last landing; and a land recorded waiting is no
+    stop."""
+    stop, again = "flume refused it: a place on bolt/y is live", "flume refused it: the merge queue is closed"
+
+    def asked(n, head, **by):
+        return dict(Act="bolt.submit", On=["bolt/y"], Head=head, Request=n, Outcome="asked", **by)
+
+    def stopped(n, head, why=stop):
+        return dict(Act="bolt.submit", On=["bolt/y"], Head=head, Request=n, Outcome="stopped", Why=why)
+    on_send = [asked("5", H1, Card="req_k1"), stopped("5", H1)]
+    assert plan.send_spent(on_send, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(on_send) == {"5"}
+    # a land on proof asked since at a new head, and that land stopped too: req_k1's send still spent, by its own stop
+    proof = on_send + [asked("6", H2, Form="proof")]
+    assert plan.send_spent(proof, "req_k1", ["y"]) == {"y": (H1, stop)}
+    both = proof + [stopped("6", H2, again)]
+    assert plan.send_spent(both, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(both) == {"5", "6"}
+    assert {(p["request"], p.get("stopped")) for p in plan.lands_posted(both)} == {("5", True), ("6", True)}
+    # a stop of a land on proof, or on req_k2's send, spends none of req_k1's, though a later land was asked
+    for by in (dict(Form="proof"), dict(Card="req_k2")):
+        other = [asked("5", H1, **by), stopped("5", H1)]
+        assert plan.send_spent(other, "req_k1", ["y"]) == {}
+        assert plan.send_spent(other + [asked("6", H2, Form="proof"), stopped("6", H2, again)], "req_k1", ["y"]) == {}
+    assert plan.send_spent([asked("5", H1, Card="req_k2"), stopped("5", H1), asked("6", H2, Form="proof")], "req_k2", ["y"]) == {
+        "y": (H1, stop)}
+    # a stop naming no request, as an older crew recorded it, is matched to the newest land of y posted at its head
+    unnamed = {k: v for k, v in stopped("5", H1).items() if k != "Request"}
+    assert plan.send_spent([asked("5", H1, Card="req_k1"), unnamed, asked("6", H2, Form="proof")], "req_k1", ["y"]) == {
+        "y": (H1, stop)}
+    assert plan.lands_stopped([asked("5", H1, Card="req_k1"), unnamed]) == {"5"}
+    assert plan.send_spent([asked("5", H2, Card="req_k1"), asked("6", H1, Form="proof"), unnamed, asked("7", H2, Form="proof")],
+                           "req_k1", ["y"]) == {}
+    # a stop crew can't place spends the send as y's last landing, and nothing once a later land was asked
+    unplaced = [unnamed]
+    assert plan.send_spent(unplaced, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(unplaced) == set()
+    assert plan.send_spent(unplaced + [asked("6", H2, Form="proof")], "req_k1", ["y"]) == {}
+    # a stop that landed nothing at the head of a refusal that still stands is no stop (sent_back)
+    refused = [asked("5", H1, Card="req_k1"), dict(asked("5", H1), Outcome=None, Refused="a check failed"), stopped("5", H1)]
+    assert plan.send_spent(refused, "req_k1", ["y"]) == {} and plan.lands_stopped(refused) == set()
+    # a land recorded waiting is no stop: not marked stopped, and the send it was posted on stands
+    waited = [asked("5", H1, Card="req_k1"), dict(stopped("5", H1), Outcome="waiting")]
+    assert plan.lands_stopped(waited) == set() and plan.send_spent(waited, "req_k1", ["y"]) == {}
+    assert [(p["request"], p.get("waited"), p.get("stopped")) for p in plan.lands_posted(waited)] == [("5", True, None), ("5", True, None)]
+
+
 WAIT = ("flume refused the retry: the base place /Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y is submitted "
         "once no place on its branch bolt/y is live, and /Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1 is (203)")
 FIXED = "5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b"  # the head flume-0.19.0/bolt-forecast-fixed names, where y-1 landed
@@ -3227,6 +3312,98 @@ def test_a_land_that_waited_on_a_landing_fix_lands_on_the_same_send_once_it_took
     # the next raise reads z's land asked on req_k1's send: nothing more is posted
     acts.rows = {"z": row("z", FIXED)}
     assert plan.raise_landings(FLEET, "swancloud", "crew", acts) == "req_k1" and len(acts.posts) == 1
+
+
+def spent_kept(bolt, of):
+    """The run record of a bolt a spent kept send held (a-stopped-bolt-proven-again-lands, the signal's case): req_k1
+    posted, answered and closed keeping the user's send for bolt at abc1234, and its land 5 on that send, a land of its
+    base place (of), asked and then stopped at abc1234, Flume's 203 words as Why; with requests.rec's land 5."""
+    from test_runner import rec
+    entries = [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads=f"{bolt}@abc1234"),
+               dict(Act="card.answer", Key="land/crew", By="swancloud-ops", Card="req_k1", Answer="approved", Heads=f"{bolt}@abc1234"),
+               dict(Act="bolt.submit", On=[f"bolt/{bolt}"], Card="req_k1", Head=H1, Request="5", Outcome="asked"),
+               dict(Act="card.close", Key="land/crew", By="swancloud-ops", Card="req_k1", Rows="0", Heads=f"{bolt}@abc1234"),
+               dict(Act="bolt.submit", On=[f"bolt/{bolt}"], Head=H1, Request="5", Outcome="stopped", Why=WAIT)]
+    return entries, [rec(5, "land", f"bolt/{bolt}", Of=of)]
+
+
+def test_a_bolt_a_spent_kept_send_held_lands_on_proof_once_proven_at_a_new_head(monkeypatch):
+    """rail-cards "Proven again at a new head", "Marked to stay" and "A later land stopped too"
+    (a-stopped-bolt-proven-again-lands, Decision 4): the signal's case. y's land on req_k1's send, kept on its close,
+    was stopped while Flume named a fix live on bolt/y; the fix merged, and y, not marked to stay, reads proven at
+    def5678 with its own work unchanged. The raise posts one land of y on proof there and no card, and the next raise
+    posts none. z, marked to stay, the same: no land, and a card asking for z at def5678 with its box. y's land on proof
+    at def5678 stopped too: no land on req_k1's spent send, and a card asking for y there, saying its land on proof was
+    stopped."""
+    from test_runner import rec
+    entries, lands = spent_kept("y", 1)
+    acts = proof_acts(monkeypatch, {"y": row("y", H2)}, entries, drive=entries, lands=lands, works={"y": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert acts.posts == [("plan(crew): land y on proof", "bolt.submit", ["bolt/y"], dict(Form="proof", Head=H2, Request="6", Outcome="asked"), [])]
+    assert not any(t == "post_request" for t, _ in acts.calls) and acts.worked == []
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert len(acts.posts) == 1 and not any(t == "post_request" for t, _ in acts.calls)
+    # z, marked to stay: no land, and a card asking for z at def5678 with its box
+    entries, lands = spent_kept("z", 2)
+    acts = proof_acts(monkeypatch, {"z": row("z", H2)}, entries, drive=entries, lands=lands, works={"z": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("z", "def5678", False)]]
+    # y's land on proof at def5678 stopped too: req_k1's send is spent, so no land of y on it; the card asks for y
+    stop = "flume refused it: the merge queue is closed"
+    entries, lands = spent_kept("y", 1)
+    entries += [dict(Act="bolt.submit", On=["bolt/y"], Form="proof", Head=H2, Request="6", Outcome="asked"),
+                dict(Act="bolt.submit", On=["bolt/y"], Head=H2, Request="6", Outcome="stopped", Why=stop)]
+    acts = proof_acts(monkeypatch, {"y": row("y", H2, stopped=(H2, stop))}, entries, drive=entries, works={"y": work()},
+                      lands=lands + [rec(6, "land", "bolt/y", Of=1)], reads=TestLandsDue().reads(refused={5: WAIT, 6: stop}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    post = next(a for t, a in acts.calls if t == "post_request")
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("y", "def5678", False)]]
+    assert f"Its land on proof at def5678 was stopped, nothing of the bolt's: {stop}" in json.dumps(post)
+
+
+def test_a_bolt_a_spent_kept_send_held_at_its_stops_head_is_asked_on_the_card(monkeypatch):
+    """rail-cards "Proven again at the stop's own head" (a-stopped-bolt-proven-again-lands, Decision 4): z's land on
+    req_k1's send, kept on its close, was stopped at abc1234, and z still reads proven there, its row saying what stopped
+    it. No send holds it: no land is posted, and the card posted asks for z at abc1234 with its box, saying what stopped
+    its last landing."""
+    entries, lands = spent_kept("z", 2)
+    acts = proof_acts(monkeypatch, {"z": row("z", stopped=(H1, WAIT))}, entries, drive=entries, lands=lands,
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    post = next(a for t, a in acts.calls if t == "post_request")
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("z", "abc1234", False)]]
+    assert "Its last landing at abc1234 was stopped, nothing of the bolt's" in json.dumps(post) and "(203)" in json.dumps(post)
+
+
+def test_the_rail_read_raises_a_kit_whose_bolt_a_spent_kept_send_held(monkeypatch):
+    """rail-cards "Proven again at a new head" and "Beside a card waiting on the user" (a-stopped-bolt-proven-again-lands,
+    Decisions 2 and 4): the signal's case, y's land on req_k1's kept send stopped and y proven at def5678 with its own
+    work unchanged: the rail's read raises crew for y on proof, whose raise posts y's land on proof, and the read after
+    it raises none. z, marked to stay, its land on req_k1's kept send stopped at abc1234 where it still stands, beside
+    req_k2 waiting on the user showing y: the read names z unoffered, and the raise changes req_k2 to ask for z."""
+    entries, lands = spent_kept("y", 1)
+    land = proof_acts(monkeypatch, {"y": row("y", H2)}, entries, drive=entries, lands=lands, works={"y": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    got = plan.sweep_moved(FLEET, proof_read([("y", H2, True)], {"y": "proof"}, logs=entries), SweepActs(land))
+    assert got == {"raised": [dict(label="swancloud", kit="crew", was=None, now=None, card=None, said=None, sent=False, rows=[],
+                                   proven=["y"])], "unread": []}
+    assert [(on, f["Form"], f["Head"]) for _, _, on, f, _ in land.posts] == [(["bolt/y"], "proof", H2)]
+    acts = SweepActs(land)
+    assert plan.sweep_moved(FLEET, proof_read([("y", H2, True)], {"y": "proof"}, logs=land.held), acts) == {"raised": [], "unread": []}
+    assert acts.raised == [] and len(land.posts) == 1
+    # z at its stop's head beside req_k2 waiting on the user with y: z is unoffered, and the raise asks for it
+    entries, lands = spent_kept("z", 2)
+    entries += [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k2", Heads="y@abc1234")]
+    read = proof_read([("y", H1, True), ("z", H1, True)], {"y": "send", "z": "send"}, ["req_k2"], entries, text=PLAN)
+    assert plan.landings_unoffered(read, "swancloud", "mac-studio", KITS) == [(("swancloud", "crew"), ["z"])]
+    land = proof_acts(monkeypatch, {"y": row("y"), "z": row("z", stopped=(H1, WAIT))}, entries, PENDING, text=PLAN, drive=entries,
+                      lands=lands, reads=TestLandsDue().reads(refused={5: WAIT}))
+    acts = SweepActs(land)
+    got = plan.sweep_moved(FLEET, read, acts)
+    assert acts.raised == ["crew"] and [m["rows"] for m in got["raised"]] == [["z"]]
+    assert getattr(land, "posts", []) == [] and posted_heads(land) == [[("y", "abc1234", False), ("z", "abc1234", False)]]
 
 
 def test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing():
