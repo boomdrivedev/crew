@@ -2696,6 +2696,58 @@ def move_due(lag, moved_to, installed):
     return "stuck" if moved_to and moved_to == installed else "move"
 
 
+def started_commit():
+    """The commit of the crew this process started on, read once at a lasting process's start: on a checkout its HEAD,
+    read from its files (head_here), so a process follows the checkout as the follower does; on a build its release's
+    commit (crew_read), a file read; None where neither names one."""
+    if (HOME / ".git").exists():
+        return head_here()
+    return crew_read()["commit"]
+
+
+def installed_commit():
+    """The commit of the crew this host has installed, read with no process while the install has not moved: where the
+    installed command is this crew's own checkout, its HEAD now (head_here); else the installed crew's (installed),
+    asked at most once for each real path of its command and kept on the host for a build; None where the host has
+    none or it can't be read (read.1)."""
+    cmd = installed_here()
+    if cmd is None:
+        return None
+    if (HOME / ".git").exists() and own_command(cmd):
+        return head_here()
+    return installed()["commit"]
+
+
+def lasting_look(started):
+    """What a lasting process does at its look, from the commit it started on (started_commit): ("move", installed),
+    ("stuck", installed) or (None, installed), from move_due over behind and the installed commit it was started again
+    for (MOVED_TO), with the installed commit read once (installed_commit)."""
+    installed = installed_commit()
+    return move_due(behind({"commit": started}, {"commit": installed}), os.environ.get(MOVED_TO), installed), installed
+
+
+# The installed commits a move could not start again for (move_here), which this process does not try again.
+MOVE_FAILED = set()
+
+
+def move_here(argv, moved_to, env=None):
+    """Start this lasting process again through the installed command with its own arguments (argv: `_board wldn`,
+    `_rail wldn`, `events --follow --label wldn`), in its own process, which keeps its id, so its pane still reads as
+    crew's and a signal sent to it still reaches it; its environment carries MOVED_TO, the installed commit it moved
+    for (move_due), and env, what it hands on. Where the exec fails it says so once on standard error and returns, the
+    process running on as it is, and tries no more for that installed commit."""
+    if moved_to in MOVE_FAILED:
+        return
+    try:
+        sys.stdout.flush()
+        os.execvpe("bash", ["bash", installed_here() or crew_command(), *argv],
+                   os.environ | {MOVED_TO: moved_to or ""} | (env or {}))
+    except OSError as e:
+        MOVE_FAILED.add(moved_to)
+        print(f"crew could not start {' '.join(argv)} again as the installed crew ({e.strerror or e}); it runs on as it is",
+              file=sys.stderr)
+
+
 def ask_release(cmd):
     """Another crew's answer to `crew _release`, read (release_said), or unread saying why."""
     try:

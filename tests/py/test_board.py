@@ -615,6 +615,71 @@ class TestMoves:
     def test_a_process_moves_once_for_each_install(self, lag, moved_to, installed, what):
         assert crew.move_due(lag, moved_to, installed) == what
 
+    @pytest.fixture
+    def build(self, tmp_path, monkeypatch):
+        """crew run from a build in the store, whose release names OLD, and a profile folder on its path whose crew is
+        another build, which answers crew _release naming NEW."""
+        store = tmp_path / "store"
+        home = store / "abc-crew"
+        (home / "plugin").mkdir(parents=True)
+        (home / crew.RELEASE).write_text(json.dumps({"commit": self.OLD, "version": "0.59.0"}))
+        monkeypatch.setattr(crew, "HOME", home)
+        monkeypatch.setattr(crew, "STORE", f"{store}/")
+        monkeypatch.setattr(crew, "ASKED", {})
+        monkeypatch.setattr(crew, "MOVE_FAILED", set())
+        monkeypatch.delenv(crew.MOVED_TO, raising=False)
+        profile = tmp_path / "profile/bin"
+        profile.mkdir(parents=True)
+        (store / "def-crew/bin").mkdir(parents=True)
+        (store / "def-crew/bin/crew").write_text("#!/bin/sh\n")
+        (store / "def-crew/bin/crew").chmod(0o755)
+        (profile / "crew").symlink_to(store / "def-crew/bin/crew")
+        monkeypatch.setenv("PATH", str(profile))
+        self.installed = {"root": str(store / "def-crew"), "commit": self.NEW, "version": "v0.67.1", "from": "release", "unread": None}
+        monkeypatch.setattr(crew, "ask_release", lambda cmd: self.installed)
+        self.started = []
+        monkeypatch.setattr(crew.os, "execvpe", lambda file, argv, env: self.started.append((file, argv, env)))
+        return store, home, profile
+
+    def test_a_move_runs_the_installed_command_in_its_own_process(self, build):
+        store, home, profile = build
+        assert crew.started_commit() == self.OLD
+        assert crew.lasting_look(self.OLD) == ("move", self.NEW)
+        crew.move_here(["_board", "wldn"], self.NEW, {"CREW_FOLLOWED": "{}"})
+        [(file, argv, env)] = self.started
+        assert (file, argv) == ("bash", ["bash", str(profile / "crew"), "_board", "wldn"])
+        assert env[crew.MOVED_TO] == self.NEW and env["CREW_FOLLOWED"] == "{}" and env["PATH"] == str(profile)
+
+    def test_a_move_that_cannot_start_says_so_and_runs_on(self, build, monkeypatch, capsys):
+        def refuse(file, argv, env):
+            self.started.append(argv)
+            raise FileNotFoundError(2, "No such file or directory")
+        monkeypatch.setattr(crew.os, "execvpe", refuse)
+        assert crew.move_here(["_rail", "wldn"], self.NEW) is None
+        crew.move_here(["_rail", "wldn"], self.NEW)
+        said = capsys.readouterr().err
+        assert said == "crew could not start _rail wldn again as the installed crew (No such file or directory); it runs on as it is\n"
+        assert len(self.started) == 1, "a move that could not start was tried again for the same install"
+        crew.move_here(["_rail", "wldn"], self.LATER)
+        assert len(self.started) == 2, "a later install's move was not tried"
+
+    def test_on_a_checkout_the_installed_commit_is_read_with_no_process(self, tmp_path, monkeypatch):
+        """host-holds-and-updates, Scenario: A checkout moves under a tab: its HEAD at the start against its HEAD now,
+        each read from the checkout's files (a logic test's subprocess raises)."""
+        git = tmp_path / ".git"
+        (git / "refs/heads").mkdir(parents=True)
+        (git / "HEAD").write_text("ref: refs/heads/main\n")
+        (git / "refs/heads/main").write_text("a" * 40 + "\n")
+        (tmp_path / "plugin/bin").mkdir(parents=True)
+        (tmp_path / "plugin/bin/crew").write_text("#!/bin/sh\n")
+        monkeypatch.setattr(crew, "HOME", tmp_path)
+        monkeypatch.delenv(crew.MOVED_TO, raising=False)
+        started = crew.started_commit()
+        assert started == "a" * 40 and crew.installed_commit() == "a" * 40
+        assert crew.lasting_look(started) == (None, "a" * 40)
+        (git / "refs/heads/main").write_text("b" * 40 + "\n")
+        assert crew.lasting_look(started) == ("move", "b" * 40)
+
 
 class TestRefresh:
     """The host's follower's refresh (the crew-board spec, One refresh writes every drive's rail and board frames from one read, With nothing moved,
