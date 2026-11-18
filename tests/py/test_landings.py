@@ -3189,6 +3189,55 @@ def test_a_stop_on_the_send_closes_the_card_and_asks_again_though_the_head_moved
         ("card.close", said, None), ("card.post", None, "z@abc1234")]
 
 
+def test_a_send_is_spent_for_good_once_a_land_it_posted_was_stopped():
+    """rail-cards "A landing the runner or Flume stopped keeps its box" and "A later land stopped too"
+    (a-stopped-bolt-proven-again-lands, Decision 1): y's land 5 on req_k1's send was stopped at abc1234. The send is spent
+    for y whatever was asked of y since, a land on proof at def5678 and its stop among them, with the head and words of
+    its own stop; a stop of a land on proof or on another card's send spends none of it; a stop naming no request is
+    matched at its head; one crew can't place spends it only as y's last landing; and a land recorded waiting is no
+    stop."""
+    stop, again = "flume refused it: a place on bolt/y is live", "flume refused it: the merge queue is closed"
+
+    def asked(n, head, **by):
+        return dict(Act="bolt.submit", On=["bolt/y"], Head=head, Request=n, Outcome="asked", **by)
+
+    def stopped(n, head, why=stop):
+        return dict(Act="bolt.submit", On=["bolt/y"], Head=head, Request=n, Outcome="stopped", Why=why)
+    on_send = [asked("5", H1, Card="req_k1"), stopped("5", H1)]
+    assert plan.send_spent(on_send, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(on_send) == {"5"}
+    # a land on proof asked since at a new head, and that land stopped too: req_k1's send still spent, by its own stop
+    proof = on_send + [asked("6", H2, Form="proof")]
+    assert plan.send_spent(proof, "req_k1", ["y"]) == {"y": (H1, stop)}
+    both = proof + [stopped("6", H2, again)]
+    assert plan.send_spent(both, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(both) == {"5", "6"}
+    assert {(p["request"], p.get("stopped")) for p in plan.lands_posted(both)} == {("5", True), ("6", True)}
+    # a stop of a land on proof, or on req_k2's send, spends none of req_k1's, though a later land was asked
+    for by in (dict(Form="proof"), dict(Card="req_k2")):
+        other = [asked("5", H1, **by), stopped("5", H1)]
+        assert plan.send_spent(other, "req_k1", ["y"]) == {}
+        assert plan.send_spent(other + [asked("6", H2, Form="proof"), stopped("6", H2, again)], "req_k1", ["y"]) == {}
+    assert plan.send_spent([asked("5", H1, Card="req_k2"), stopped("5", H1), asked("6", H2, Form="proof")], "req_k2", ["y"]) == {
+        "y": (H1, stop)}
+    # a stop naming no request, as an older crew recorded it, is matched to the newest land of y posted at its head
+    unnamed = {k: v for k, v in stopped("5", H1).items() if k != "Request"}
+    assert plan.send_spent([asked("5", H1, Card="req_k1"), unnamed, asked("6", H2, Form="proof")], "req_k1", ["y"]) == {
+        "y": (H1, stop)}
+    assert plan.lands_stopped([asked("5", H1, Card="req_k1"), unnamed]) == {"5"}
+    assert plan.send_spent([asked("5", H2, Card="req_k1"), asked("6", H1, Form="proof"), unnamed, asked("7", H2, Form="proof")],
+                           "req_k1", ["y"]) == {}
+    # a stop crew can't place spends the send as y's last landing, and nothing once a later land was asked
+    unplaced = [unnamed]
+    assert plan.send_spent(unplaced, "req_k1", ["y"]) == {"y": (H1, stop)} and plan.lands_stopped(unplaced) == set()
+    assert plan.send_spent(unplaced + [asked("6", H2, Form="proof")], "req_k1", ["y"]) == {}
+    # a stop that landed nothing at the head of a refusal that still stands is no stop (sent_back)
+    refused = [asked("5", H1, Card="req_k1"), dict(asked("5", H1), Outcome=None, Refused="a check failed"), stopped("5", H1)]
+    assert plan.send_spent(refused, "req_k1", ["y"]) == {} and plan.lands_stopped(refused) == set()
+    # a land recorded waiting is no stop: not marked stopped, and the send it was posted on stands
+    waited = [asked("5", H1, Card="req_k1"), dict(stopped("5", H1), Outcome="waiting")]
+    assert plan.lands_stopped(waited) == set() and plan.send_spent(waited, "req_k1", ["y"]) == {}
+    assert [(p["request"], p.get("waited"), p.get("stopped")) for p in plan.lands_posted(waited)] == [("5", True, None), ("5", True, None)]
+
+
 WAIT = ("flume refused the retry: the base place /Users/chuck/.local/share/flume/places/f3a444f5e38a/bolt--y is submitted "
         "once no place on its branch bolt/y is live, and /Users/chuck/.local/share/flume/places/f3a444f5e38a/fix--y-1 is (203)")
 FIXED = "5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b"  # the head flume-0.19.0/bolt-forecast-fixed names, where y-1 landed

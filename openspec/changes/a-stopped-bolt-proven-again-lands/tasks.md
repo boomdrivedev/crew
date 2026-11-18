@@ -4,7 +4,7 @@ Before the first task, sync the tests' venv once: `devenv shell -- moon run test
 
 ## 1. A stop spends its send for good
 
-- [ ] 1.1 A send is spent for a bolt once any land it posted of that bolt was stopped, whatever was asked of the bolt since; `lands_posted` marks each stopped land, read from the new `lands_stopped` (design Decision 1; Task notes 1.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_send_is_spent_for_good_once_a_land_it_posted_was_stopped" "tests/py/test_rail.py::TestSweepJudged::test_an_answered_landings_card_whose_ticked_bolts_land_on_that_send_was_stopped_waits_on_it_no_more"`.
+- [x] 1.1 A send is spent for a bolt once any land it posted of that bolt was stopped, whatever was asked of the bolt since; `lands_posted` marks each stopped land, read from the new `lands_stopped` (design Decision 1; Task notes 1.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_send_is_spent_for_good_once_a_land_it_posted_was_stopped" "tests/py/test_rail.py::TestSweepJudged::test_an_answered_landings_card_whose_ticked_bolts_land_on_that_send_was_stopped_waits_on_it_no_more"`.
 - [ ] 1.2 `runner.lands_due` posts no land on a send any land of which the row was stopped, at any head, a later land on proof stopped among them (design Decision 3; Task notes 1.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::TestLandsDue::test_a_spent_send_posts_no_land_at_any_head_after_a_later_land" "tests/py/test_landings.py::TestLandsDue::test_a_stopped_row_posts_nothing_on_the_same_send_and_once_on_a_new_one"`.
 
 ## 2. A kept send holds no bolt a stop spent

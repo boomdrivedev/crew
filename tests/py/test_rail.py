@@ -1486,9 +1486,10 @@ class TestSweepJudged:
         assert j["waiting_on_owner"] == [] and [c for c, *_ in j["gone"]] == [k]
         assert plan.send_waits([answer, landed] + stop(Form="proof"), "req_5f") == ["b"]
         assert plan.send_waits([answer, landed] + stop(Card="req_4e"), "req_5f") == ["b"]
-        # a later land of b asked again, its last landing no longer stopped: the send it was asked on waits on it
-        again = did("bolt.submit", 4, On=["bolt/b"], Head=b, Request="6", Outcome="asked", Card="req_5f")
-        assert plan.send_waits([answer, landed] + stop(Card="req_5f") + [again], "req_5f") == ["b"]
+        # a later land of b asked on proof at a new head (a-stopped-bolt-proven-again-lands, Decision 1): the stop spent
+        # the send for good, so it waits on b no more
+        again = did("bolt.submit", 4, On=["bolt/b"], Head="3333333" + "0" * 33, Request="6", Outcome="asked", Form="proof")
+        assert plan.send_waits([answer, landed] + stop(Card="req_5f") + [again], "req_5f") == []
         assert plan.send_spent([answer, landed] + stop(Card="req_5f"), "req_5f", ["a", "b"]) == {"b": (b, "a place on bolt/b is live")}
 
     def test_a_kits_card_is_left_while_the_host_of_a_bolt_of_it_does_not_answer(self):
