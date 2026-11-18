@@ -1,0 +1,14 @@
+# Tasks
+
+Before the first task, sync the tests' venv once: `devenv shell -- moon run tests:venv`. A check below is one pytest run, `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider <tests>`, and passes when pytest reports every test it names passed. Build the tasks in order. Submit nothing, and never run `wt submit --help`.
+
+## 1. A stop spends its send for good
+
+- [ ] 1.1 A send is spent for a bolt once any land it posted of that bolt was stopped, whatever was asked of the bolt since; `lands_posted` marks each stopped land, read from the new `lands_stopped` (design Decision 1; Task notes 1.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_send_is_spent_for_good_once_a_land_it_posted_was_stopped" "tests/py/test_rail.py::TestSweepJudged::test_an_answered_landings_card_whose_ticked_bolts_land_on_that_send_was_stopped_waits_on_it_no_more"`.
+- [ ] 1.2 `runner.lands_due` posts no land on a send any land of which the row was stopped, at any head, a later land on proof stopped among them (design Decision 3; Task notes 1.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::TestLandsDue::test_a_spent_send_posts_no_land_at_any_head_after_a_later_land" "tests/py/test_landings.py::TestLandsDue::test_a_stopped_row_posts_nothing_on_the_same_send_and_once_on_a_new_one"`.
+
+## 2. A kept send holds no bolt a stop spent
+
+- [ ] 2.1 `landings_sent` leaves out each bolt whose kept send a stop spent, so `rows_unsent` keeps it a row and `sent_left` no longer names it (design Decision 2; Task notes 2.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_send_kept_on_a_closed_card_holds_no_bolt_a_stop_spent"`.
+- [ ] 2.2 The raise lands a bolt a spent kept send held: on proof at a new head when it is not marked to stay, else asked on its card, at its stop's own head too and after a later land on proof was stopped (design Decision 4; Task notes 2.2). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_landings.py::test_a_bolt_a_spent_kept_send_held_lands_on_proof_once_proven_at_a_new_head" "tests/py/test_landings.py::test_a_bolt_a_spent_kept_send_held_at_its_stops_head_is_asked_on_the_card"`.
+- [ ] 2.3 The rail's line says such a bolt lands on proof, or that its card carries or follows it, never that the spent send holds it, and the rail's read raises its kit (design Decisions 2 and 4; Task notes 2.3). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_rail.py::TestRows::test_a_bolt_a_spent_kept_send_held_is_held_by_no_send" "tests/py/test_landings.py::test_the_rail_read_raises_a_kit_whose_bolt_a_spent_kept_send_held"`.
