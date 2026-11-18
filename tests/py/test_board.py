@@ -567,21 +567,30 @@ class TestInstalledCrew:
         monkeypatch.setattr(crew, "ask_release", lambda cmd: pytest.fail(f"asked {cmd} crew _release"))
         assert board.behind_here() is False
 
-    def test_a_follower_started_again_for_its_lag_says_so_as_it_starts(self, build, tmp_path, monkeypatch):
+    def test_a_follower_started_again_carries_the_installed_commit(self, build, tmp_path, monkeypatch):
+        """host-holds-and-updates "A lasting process moves for an install only on what it read": a follower started
+        again, for its lag as for an update, carries the installed commit it moved for (crew.MOVED_TO), and an empty one
+        where the installed crew can't be read."""
         store, home, profile = build
         (profile / "crew").symlink_to(self.built(store, "def-crew"))
-        started = []
+        monkeypatch.setattr(crew, "ASKED", {})
+        theirs = {"root": str(store / "def-crew"), "commit": "b" * 40, "version": "v0.67.1", "from": "release", "unread": None}
+        monkeypatch.setattr(crew, "ask_release", lambda cmd: theirs)
+        started, envs = [], []
         monkeypatch.setattr(board.subprocess, "run", lambda argv, **kw: board.subprocess.CompletedProcess(argv, 0, "", ""))
-        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: started.append((argv, env["CREW_FOLLOWER_LAGGED"])))
+        monkeypatch.setattr(board.os, "execvpe", lambda file, argv, env: envs.append(env) or started.append((argv, env[crew.MOVED_TO])))
         monkeypatch.setattr(board.sys, "argv", ["board.py", "_rail", "agentplot"])
         f = board.Follower(open(tmp_path / "lock", "w"))
         f.labels = ["agentplot"]
         f.again({}, lag=True)
         f.again({})
-        assert started == [(["bash", str(profile / "crew"), "_rail", "agentplot"], "1"), (["bash", str(profile / "crew"), "_rail", "agentplot"], "0")]
-        monkeypatch.setenv("CREW_FOLLOWER_LAGGED", "1")
-        assert board.Follower(None).started_lagging and "CREW_FOLLOWER_LAGGED" not in os.environ
-        assert not board.Follower(None).started_lagging
+        assert started == [(["bash", str(profile / "crew"), "_rail", "agentplot"], "b" * 40)] * 2
+        assert not any("CREW_FOLLOWER_LAGGED" in env for env in envs), "the follower's old mark was carried"
+        (profile / "crew").unlink()
+        (profile / "crew").symlink_to(self.built(store, "ghi-crew"))
+        theirs = crew.unread_crew("did not answer crew _release within 5 seconds")
+        f.again({})
+        assert started[-1] == (["bash", str(profile / "crew"), "_rail", "agentplot"], "")
 
     def test_on_a_checkout_the_follower_starts_again_as_its_own_board(self, tmp_path, monkeypatch):
         (tmp_path / ".git").write_text("gitdir: /elsewhere\n")
@@ -707,6 +716,39 @@ class TestMoves:
         board.follow("wldn", once=True)
         assert len(self.started) == 1, "a board drawn once moved"
 
+    def test_a_rail_tab_without_the_lock_moves_and_one_holding_it_leaves_it_to_its_follower(self, build, tmp_path, monkeypatch):
+        """host-holds-and-updates, Scenario: A rail tab without the follower lock: it starts again as `crew _rail
+        wldn`, holding no lock; one that took the lock moves only through its follower (Follower.lagging, again)."""
+        store, home, profile = build
+        monkeypatch.setattr(board, "FRAMES", tmp_path / "frames")
+        monkeypatch.setattr(board.sys, "argv", ["board.py", "_rail", "wldn"])
+        monkeypatch.setattr(board.signal, "signal", lambda *a: None)
+        monkeypatch.setattr(board, "lock_follower", lambda kind, label=None, wait=True: None)  # swancloud's job holds it
+        self.seconds(monkeypatch, 0)
+        with pytest.raises(KeyboardInterrupt):
+            board.rail_follow("wldn")
+        [(file, argv, env)] = self.started
+        assert argv == ["bash", str(profile / "crew"), "_rail", "wldn"] and env[crew.MOVED_TO] == self.NEW
+        assert "CREW_FOLLOWER_LOCK" not in env, "a tab holding no lock handed one on"
+        self.started.clear()
+        stepped = []
+
+        class Held:
+            def __init__(self, lock):
+                pass
+
+            def step(self, n):
+                stepped.append(n)
+                raise KeyboardInterrupt
+
+            def close(self):
+                pass
+        monkeypatch.setattr(board, "lock_follower", lambda kind, label=None, wait=True: object())
+        monkeypatch.setattr(board, "Follower", Held)
+        with pytest.raises(KeyboardInterrupt):
+            board.rail_follow("wldn")
+        assert stepped == [1] and self.started == [], "a tab holding the lock moved but through its follower"
+
     def test_on_a_checkout_the_installed_commit_is_read_with_no_process(self, tmp_path, monkeypatch):
         """host-holds-and-updates, Scenario: A checkout moves under a tab: its HEAD at the start against its HEAD now,
         each read from the checkout's files (a logic test's subprocess raises)."""
@@ -794,6 +836,10 @@ class TestRefresh:
                 test.again.append(list(self.labels))
                 test.lags.append((lag, len(test.reads)))
         self.lags = []
+        # the installed crew's commit, which the follower reads only where it lags (Follower.lagging)
+        self.installed = "2" * 40
+        monkeypatch.setattr(crew, "installed", lambda: {"root": "/i", "commit": self.installed, "version": "v0.67.1", "from": "release", "unread": None})
+        monkeypatch.delenv(crew.MOVED_TO, raising=False)
         return Here(None)
 
     def test_the_follower_runs_pending_yous_notice_while_a_role_here_runs_as_its_kind(self, tmp_path, monkeypatch):
@@ -887,15 +933,20 @@ class TestRefresh:
         assert len(self.lags) == 1, "a follower on the installed crew started again with nothing moved"
 
     def test_a_follower_started_again_for_its_lag_that_still_lags_follows_as_it_is_and_says_so_once(self, follower, monkeypatch, capsys):
-        """Scenario: Started again and still another: it reads and sweeps as it is, starts nothing again, and says why
-        once, whatever its later refreshes find."""
+        """host-holds-and-updates, Scenarios: Started again and still another: it reads and sweeps as it is, starts
+        nothing again, and says why once, whatever its later refreshes find while the installed crew names the commit it
+        was started again for (CREW_MOVED_TO); A follower stuck for one install: once the host installs another, its next
+        refresh starts it again, before it reads."""
         monkeypatch.setattr(board, "behind_here", lambda: True)
-        follower.started_lagging = True
+        monkeypatch.setenv(crew.MOVED_TO, self.installed)
         follower.refresh()
         follower.refresh()
         assert self.lags == [] and len(self.reads) == 1
         said = capsys.readouterr().err
         assert said.count("still runs another") == 1 and "it follows as it is" in said
+        self.installed = "3" * 40
+        follower.refresh()
+        assert self.lags == [(True, 1)], "a follower stuck for one install did not start again at the next"
 
     def test_a_follower_whose_lag_cant_be_told_follows_as_it_is(self, follower, monkeypatch):
         """Scenario: The installed crew can't be read."""
