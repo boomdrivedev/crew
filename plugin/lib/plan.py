@@ -3307,12 +3307,21 @@ def left_of(entries, key, heads):
 def landings_sent(entries, key, owner):
     """The bolts the user's send on a kit's landings card still landed when a new card followed it (landings_step's
     follow), from the run record's entries, oldest first: {bolt: the head they ticked}, from the Heads of each close of
-    a card under key in owner's name that carries them, the last for each bolt; {} for none."""
-    out = {}
+    a card under key in owner's name that carries them, the last for each bolt, read on the card whose close kept it;
+    less each bolt a stop spent that card's send for (send_spent), which no send kept on a closed card holds, so the
+    raise keeps it a row, the rail's line and read count it held by no send, and crew card read names it among nothing
+    an earlier send lands (rail-cards "A kit's landings card's close keeps the user's send";
+    a-stopped-bolt-proven-again-lands, Decision 2); {} for none. A decision of facts alone (code.7)."""
+    out, kept = {}, {}
     for e in entries:
         if e.get("Act") == "card.close" and not e.get("Refused") and e.get("Key") == key and e.get("By") == owner:
-            out.update({b: h for b, h, _ in card_heads(e.get("Heads"))})
-    return out
+            for b, h, _ in card_heads(e.get("Heads")):
+                out[b], kept[b] = h, e.get("Card")
+    on = {}
+    for b, c in kept.items():
+        on.setdefault(c, []).append(b)
+    spent = {b for c, bs in on.items() for b in send_spent(entries, c, bs)}
+    return {b: h for b, h in out.items() if b not in spent}
 
 
 def rows_unsent(rows, sent, work=None):

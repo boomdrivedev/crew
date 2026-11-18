@@ -1088,6 +1088,28 @@ def test_the_bolts_a_followed_send_still_lands_are_no_row_of_any_card_after_it_w
     assert plan.landings_sent([], "land/crew", "swancloud-ops") == {}
 
 
+def test_a_send_kept_on_a_closed_card_holds_no_bolt_a_stop_spent():
+    """rail-cards "A kept send a stop spent" (a-stopped-bolt-proven-again-lands, Decision 2): req_k1 closed keeping the
+    user's send for y and z at abc1234, and the runner stopped z's land on that send. The kept send holds y alone: the
+    raise keeps z a row at def5678 with no words of a send while y lands on that send, and crew card read names y alone
+    among what it still lands. A stop of z's land on proof, or on req_k2's send, spends nothing of req_k1's, and a later
+    close of req_k2 keeping z at def5678 holds z there."""
+    close = dict(Act="card.close", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads="y@abc1234 z@abc1234")
+
+    def stopped(**by):
+        return [dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="asked", **by),
+                dict(Act="bolt.submit", On=["bolt/z"], Head=H1, Request="5", Outcome="stopped", Why=STOP)]
+    spent = [close] + stopped(Card="req_k1")
+    assert plan.landings_sent(spent, "land/crew", "swancloud-ops") == {"y": "abc1234"}
+    for by in (dict(Form="proof"), dict(Card="req_k2")):
+        assert plan.landings_sent([close] + stopped(**by), "land/crew", "swancloud-ops") == {"y": "abc1234", "z": "abc1234"}
+    later = dict(close, Card="req_k2", Heads="z@def5678")
+    assert plan.landings_sent(spent + [later], "land/crew", "swancloud-ops") == {"y": "abc1234", "z": "def5678"}
+    sent = plan.landings_sent(spent, "land/crew", "swancloud-ops")
+    assert plan.rows_unsent([box("y", H2), box("z", H2)], sent, {"y": work(), "z": work()}) == ([box("z", H2)], ["y"], [])
+    assert plan.sent_left(sent, {"y": H2, "z": H2}, {"y", "z"}, {}, {"y": work(), "z": work()}) == (["y"], [])
+
+
 def test_a_sent_bolt_that_only_took_main_in_is_no_row_and_one_whose_work_changed_is_a_row_saying_so():
     """rail-cards "A refused bolt takes main in" and "A fix adds a commit"."""
     sent = {"y": "abc1234", "z": "abc1234"}
