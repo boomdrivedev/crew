@@ -15,8 +15,9 @@ its stream on every view (stream_said, piece_said).
 A start launches its bolt whole, refused only where no runner answers for the drive (runnerless), and every plan
 write reaches the places a started bolt launched as its own act: added work launched, dropped work dropped, a dependent
 launched again when what it waits on is (reach), an amendment a retry of construct or a launch anew (amending), and a
-move, split or change of After of launched work refused (launched_refusal); each launch's priority follows its bolt's
-place in the plan (priorities).
+move, split or change of After of launched work refused (launched_refusal); a bolt's launches carry its priority, which
+it keeps until it is moved, a start or a move placing it between its started neighbours (numbering) and a move re-setting
+its own places alone (priorities).
 
 A place that stopped short asking, or waits on its caller, is answered by a retry with the answer's words (answer_retry).
 A fix on a started bolt is a launch of Flume's fix kind on the bolt's branch (fix_launch), dropped by a drop
@@ -1008,12 +1009,66 @@ def brief(u):
     return (u.get("Intent") or "") + (" Sources: " + "; ".join(sources) + "." if sources else "")
 
 
-def priority_of(plan, bolt):
-    """A crossed bolt's priority (Decision 6): its place among the plan's bolts given through Flume (Path: flume),
-    counted from the end, so the first in the plan's order has the highest and Flume starts its waiting stages first
-    (flume record 0010); None for a bolt not given through Flume, or gone from the plan."""
-    given = [b.name() for b in plan.bolts() if b.get("Path") == "flume"]
-    return len(given) - given.index(bolt) if bolt in given else None
+def priority_of(requests, bolt):
+    """A started bolt's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 1): the Priority of the newest
+    request, by its number, among the launches of the bolt's work, its own (bolt/<bolt>) and every launch whose Base is
+    bolt/<bolt>, and the priority requests of those launches; so a bolt started before bolts were base places, with no
+    launch of its own, reads its pieces'. An int, or None where none is set. Nothing else stores it: requests.rec holds
+    each number crew set, and the plan only intent and marks (state.2)."""
+    base = f"bolt/{bolt}"
+    mine = {r.get("Request") for r in requests if r.get("Act") == "launch" and base in (r.get("Work"), r.get("Base"))}
+    newest = None
+    for r in requests:
+        if (r.get("Request") in mine or (r.get("Act") == "priority" and r.get("Of") in mine)) and r.get("Priority") is not None:
+            n, p = number(r.get("Request")), whole(r.get("Priority"))
+            if p is not None and n is not None and (newest is None or n > newest[0]):
+                newest = (n, p)
+    return newest[1] if newest else None
+
+
+# A started bolt's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 2; record 0069): a bolt placed beside
+# one started neighbour stands SPACING from it, a bolt alone takes FIRST, and every bolt stays above 0, where a role's run
+# launches, and below MAIN_PRIORITY, a fix of main's (main_priority).
+SPACING = 1000000
+FIRST = 1000000000000
+MAIN_PRIORITY = 2000000000000
+
+
+def numbering(plan, requests, bolt):
+    """The priorities a start or a move of bolt changes (a-bolt-keeps-its-priority-until-it-is-moved, Decisions 2 and 4),
+    from plain facts (code.7): plan, as the write leaves it; requests, requests.rec's records. Returns {a started bolt:
+    its priority now} for each whose priority must change, {} for a bolt not started (Path: flume). Its neighbours are
+    the nearest started bolts above and below it in the plan's order that have a priority (priority_of), itself left
+    out. It keeps its own where that stands below the one above, or MAIN_PRIORITY where there is none, and above the one
+    below, or 0, so a move that changes nothing in the order, or a write replayed at a newer tip (plan.1), re-sets
+    nothing; else it takes FIRST with none on either side, the one below's plus SPACING while that stays below
+    MAIN_PRIORITY, the one above's less SPACING while that stays above 0, or the whole number halfway between its two
+    neighbours', rounded down, where one lies strictly between. Where none of these gives one, every started bolt is
+    numbered afresh in the plan's order, the bottom FIRST and each above it SPACING more, and only those whose priority
+    changes are listed."""
+    order = [b.name() for b in plan.bolts() if b.get("Path") == "flume"]
+    if bolt not in order:
+        return {}
+    have = {b: priority_of(requests, b) for b in order}
+    i = order.index(bolt)
+    above = next((have[b] for b in reversed(order[:i]) if have[b] is not None), None)
+    below = next((have[b] for b in order[i + 1:] if have[b] is not None), None)
+    own, top, bottom = have[bolt], MAIN_PRIORITY if above is None else above, 0 if below is None else below
+    if own is not None and bottom < own < top:
+        return {}
+    placed = (FIRST if above is None and below is None else
+              below + SPACING if above is None else
+              above - SPACING if below is None else
+              (above + below) // 2)
+    if bottom < placed < top:
+        return {bolt: placed}
+    fresh = {b: FIRST + SPACING * (len(order) - 1 - k) for k, b in enumerate(order)}
+    return {b: p for b, p in fresh.items() if have[b] != p}
+
+
+def whole(v):
+    """A Priority's whole number, its sign kept, None where it holds none."""
+    return int(v) if isinstance(v, str) and re.fullmatch(r"-?[0-9]+", v) else v if isinstance(v, int) else None
 
 
 def standing(requests):
@@ -1035,16 +1090,17 @@ def built_order(work):
     return order
 
 
-def bolt_launch(plan, bolt, label):
+def bolt_launch(plan, bolt, label, priority):
     """The launch of a started bolt's base place (crew-lands-each-bolt-through-flumes-base-place, Decision 3), as (act,
     work, its fields as plan.request takes them): a place of crew's kind crew/bolt named the bolt, cut from main, in
     the bolt's repository as the plan names it, for a runner whose configuration names it to take in the stream its
-    host maps it to, at the bolt's priority (priority_of), its intent the bolt's, main-level ops as its recipient,
-    since what follows a landing is ops's (plan.16), and no Brief, since a base place runs no agent, and no After, since
-    it lands after every place on its branch. A start appends it before its pieces' launches (reach)."""
+    host maps it to, at priority, the bolt's as a start numbers it (numbering) or its requests set it (priority_of), its
+    intent the bolt's, main-level ops as its recipient, since what follows a landing is ops's (plan.16), and no Brief,
+    since a base place runs no agent, and no After, since it lands after every place on its branch. A start appends it
+    before its pieces' launches (reach), which read the bolt's priority from it."""
     return ("launch", f"bolt/{bolt}", {
         "Repo": plan.bolt(bolt).get("Repo"), "Kind": BOLT_KIND, "Name": bolt, "Base": "main",
-        "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/ops"})
+        "Priority": priority, "Intent": f"{label}/{bolt}", "Recipient": f"{label}/ops"})
 
 
 def restart(plan, requests, reads, bolt, label):
@@ -1053,8 +1109,8 @@ def restart(plan, requests, reads, bolt, label):
     start run again launches a bolt whose launch the runner refused"), from facts: plan, as the write leaves it;
     requests, requests.rec's records before it; reads, the drive's runners as crew read them (host_read's, by
     host). Returns (the requests to append, each (act, work, its fields), None): a drop of each of its pieces' launches
-    standing that the runner has not answered launched, then a launch anew of its base place (bolt_launch), its pieces
-    following by reach; or (None, why) for any other started bolt: one with no launch of its own, started before bolts
+    standing that the runner has not answered launched, then a launch anew of its base place (bolt_launch) at the
+    priority the bolt's requests already set (priority_of), its pieces following by reach; or (None, why) for any other started bolt: one with no launch of its own, started before bolts
     were base places (Decision 9), one whose launch is unanswered, held or launched, and one whose launch, or a piece's,
     crew can't tell the runner's answer to (read.1)."""
     started = f"bolt {bolt} is started already"
@@ -1078,18 +1134,19 @@ def restart(plan, requests, reads, bolt, label):
             return None, f"{started}, and crew can't tell whether {l.get('Work')}'s launch was launched: {why}"
         if r is None or (r["answers"].get(m) or {}).get("Outcome") != "launched":
             drops.append(("drop", l.get("Work"), {"Of": l.get("Request")}))
-    return drops + [bolt_launch(plan, bolt, label)], None
+    return drops + [bolt_launch(plan, bolt, label, priority_of(requests, bolt))], None
 
 
-def reach(plan, requests, bolt, label, again=()):
+def reach(plan, requests, bolt, label, again=(), priority=None):
     """What a plan write asks of the runners for a started bolt (Decisions 5 and 7), as the requests to append in order,
     each (act, work, its fields as plan.request takes them), from facts: plan, as the write leaves it; requests,
     requests.rec's records before them; label, the bolt's drive; again, the work (as requests name it) whose launch
     is dropped and launched anew, an amendment of a unit whose place is not launched. Each unit and chore of the bolt
     with no launch standing is launched, as a start launches them: in the file's order, each after the work its After
     names, cut from the bolt's branch, carrying the bolt's repository as the plan names it, for a runner whose
-    configuration names it to take in the stream its host maps it to (the user's ruling of 2026-11-01), the bolt's priority, its
-    intent, the planner as recipient, its brief, and the launches of its After work; a launch standing whose After no longer names
+    configuration names it to take in the stream its host maps it to (the user's ruling of 2026-11-01), the bolt's priority
+    (priority, where the caller numbered the bolt itself, else as its requests set it, priority_of, None where they set
+    none, which plan.reach_places refuses), its intent, the planner as recipient, its brief, and the launches of its After work; a launch standing whose After no longer names
     its After work's standing launches, one of them dropped, launched anew or gone from its After, is dropped and the
     work launched again, so no place waits on a launch that will never land; and each unit's or chore's launch on the
     bolt whose work has left it is dropped, every launch on the bolt's branch, its fixes' too, once the bolt has left
@@ -1111,6 +1168,7 @@ def reach(plan, requests, bolt, label, again=()):
     drops = [r for r in on if newest[r.get("Work")] is not r or r.get("Work") in fresh or r in left]
     out = [("drop", r.get("Work"), {"Of": r.get("Request")}) for r in drops]
     n, num = next_request(requests) + len(out), {}
+    priority = priority_of(requests, bolt) if priority is None else priority
     for u in order:
         wk = names[u.name()]
         if wk not in fresh:
@@ -1119,27 +1177,44 @@ def reach(plan, requests, bolt, label, again=()):
         num[u.name()], n = n, n + 1
         out.append(("launch", wk, {
             "Repo": plan.bolt(bolt).get("Repo"), "Kind": "chore" if u.get("Kind") == "chore" else "change", "Name": u.name(),
-            "Base": base, "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
+            "Base": base, "Priority": priority, "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner",
             "After": [num[d] for d in u.all("After") if d in num], "Brief": brief(u)}))
     return out
 
 
-def priorities(plan, requests):
-    """The priority requests a write that launches or reorders bolts appends (Decision 6): [(launch, its priority now)]
-    for each launch standing on a bolt given through Flume whose priority, its bolt's place in the plan now
-    (priority_of), differs from the last its requests set, its launch's or a later priority's; none for a fix of main,
-    or a bolt gone from the plan."""
+def priorities(requests, reads, numbers):
+    """The priority requests a start or a move appends (a-bolt-keeps-its-priority-until-it-is-moved, Decisions 3, 5 and
+    6), from plain facts (code.7): requests, requests.rec's records; reads, the drive's runners as crew read them
+    (host_read's, by host); numbers, {bolt: its priority now} as numbering gives it. Returns [(launch, its priority)], in
+    requests.rec's order, for each launch standing (standing) of a bolt in numbers, its base place (bolt/<bolt>) among
+    them, since every later launch on the bolt reads its number there, whose last set priority, its launch's or a later
+    priority's of it, differs from the bolt's; and for each fix of main standing whose last set priority is not
+    MAIN_PRIORITY, one launched before bolts kept theirs, so the next start or move re-sets it once. None for work that
+    is finished (finished), whether or not the plan still holds its bolt; a launch whose place crew can't read is
+    re-set, since crew takes nothing it can't read as finished (read.1)."""
     last = {}
     for r in requests:
-        if r.get("Act") == "launch" or (r.get("Act") == "priority" and r.get("Of") in last):
-            last[r.get("Request") if r.get("Act") == "launch" else r.get("Of")] = r.get("Priority")
+        if r.get("Act") == "launch":
+            last[r.get("Request")] = whole(r.get("Priority"))
+        elif r.get("Act") == "priority" and r.get("Of") in last:
+            last[r.get("Of")] = whole(r.get("Priority"))
     out = []
     for r in standing(requests):
-        base = r.get("Base") or ""
-        p = priority_of(plan, base[len("bolt/"):]) if base.startswith("bolt/") else None
-        if p is not None and str(p) != last.get(r.get("Request")):
+        work, base = r.get("Work") or "", r.get("Base") or ""
+        bolt = work[len("bolt/"):] if work.startswith("bolt/") else base[len("bolt/"):] if base.startswith("bolt/") else None
+        p = numbers.get(bolt) if bolt is not None else MAIN_PRIORITY if work.startswith("fix/main/") else None
+        if p is not None and p != last.get(r.get("Request")) and not finished(requests, reads, r):
             out.append((r, p))
     return out
+
+
+def finished(requests, reads, launch):
+    """Whether a launch's work is over, so it takes no priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 5):
+    its piece's stage (piece_stage) merged, landed or dropped as the runner reports its place, refused by the runner, or
+    a base place the runner refused (unlaunched, refused). A launch whose stage reads unknown is not finished (read.1);
+    one crew dropped is left out by standing."""
+    s = piece_stage(requests, reads, launch)
+    return s["stage"] in ("merged", "landed", "dropped", "refused") or (s["stage"] == "unlaunched" and bool(s.get("refused")))
 
 
 def amending(work, launch, answer, place, read):
@@ -1274,7 +1349,7 @@ def fix_launch(plan, requests, bolt, label, name, words):
     """The launch crew fix <bolt> <name> "<words>" appends for a fix on a started bolt (Decision 10), as (act, work, its
     fields as plan.request takes them), or (None, why): a place of the fix kind named <bolt>--<name>, cut from the
     bolt's branch, in the bolt's repository for a runner whose configuration names it to take, as reach launches its
-    units, with the bolt's priority and its drive's (label) intent, the planner as recipient, the fix's words as its
+    units, with the bolt's priority as its requests set it (priority_of) and its drive's (label) intent, the planner as recipient, the fix's words as its
     brief and nothing held. Refused while a launch of that fix stands on the bolt, merged or not, since the name is in
     use there (teams.3)."""
     work, base = f"fix/{bolt}/{name}", f"bolt/{bolt}"
@@ -1284,7 +1359,7 @@ def fix_launch(plan, requests, bolt, label, name, words):
                       f"{l.get('Request')}), so name this fix differently")
     return ("launch", work, {
         "Repo": plan.bolt(bolt).get("Repo"), "Kind": "fix", "Name": f"{bolt}--{name}", "Base": base,
-        "Priority": priority_of(plan, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner", "Brief": words}), None
+        "Priority": priority_of(requests, bolt), "Intent": f"{label}/{bolt}", "Recipient": f"{label}/planner", "Brief": words}), None
 
 
 def take_main_name(main, request=None):
@@ -1756,7 +1831,7 @@ def places_said(places):
     return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0] if names else "a place"
 
 
-def lands_due(rows, sent, requests, reads, posted=(), work=None):
+def lands_due(rows, sent, requests, reads, posted=(), work=None, on_main=()):
     """The lands the user's send on a kit's landings card makes due (crew-lands-each-bolt-through-flumes-base-place,
     Decisions 4 and 5; rail-cards "A landings row is due one land for each send and head"), from plain facts (code.7):
     rows, the card's rows in its order (landing_rows' and each fix of main's), each {bolt, box, facts: {head}}, a fix of
@@ -1779,13 +1854,16 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None):
     The rows due a land on proof come as a send of their own, keyed by no card, {work: (None, its head now)}
     (a-proven-bolt-lands-on-proof, Decision 1), so the same rules hold of them: one land for each head, none while one
     stands undecided or unknown, none after a stop at that head, the land posted there; a stop at an old head holds
-    nothing at a new one, a stopped land on proof holding its row only at the head it was posted at."""
-    work, due = work or {}, []
+    nothing at a new one, a stopped land on proof holding its row only at the head it was posted at.
+    No land is due, on a send or on proof, for a bolt or fix of main the runner reports landed or dropped, whether or not
+    it is still a row, nor for a bolt in on_main, the bolts crew reads landed on their kit's main (plan.21), which the
+    first act that reads them closes (a-bolt-keeps-its-priority-until-it-is-moved, Decision 7)."""
+    work, due, on_main = work or {}, [], set(on_main)
     posted = list(posted)
     waited = {str(p.get("request")) for p in posted if p.get("waited")}
     for r in sorted(rows, key=lambda r: not (r.get("work") or "").startswith("fix/main/")):
         w = r.get("work") or f"bolt/{r['bolt']}"
-        if not r.get("box") or w not in sent:
+        if not r.get("box") or w not in sent or (w == f"bolt/{r.get('bolt')}" and r.get("bolt") in on_main):
             continue
         card, at = sent[w]
         head = (r.get("facts") or {}).get("head") or ""
@@ -1821,13 +1899,14 @@ def send_stood(sent, head, work):
 
 # ------------------------------------------------------------------------------------------------ a fix of main
 
-def main_priority(plan):
-    """A fix of main's priority at its launch (Decision 11): one above every bolt given through Flume (priority_of), so
-    Flume starts its code ahead of theirs, a red main holding back every landing on it."""
-    return sum(1 for b in plan.bolts() if b.get("Path") == "flume") + 1
+def main_priority():
+    """A fix of main's priority (a-bolt-keeps-its-priority-until-it-is-moved, Decision 6): MAIN_PRIORITY, above every
+    number a started bolt takes (numbering), so Flume starts its code ahead of theirs for as long as it stands, a red
+    main holding back every landing on it."""
+    return MAIN_PRIORITY
 
 
-def main_fix_launch(plan, requests, label, repo, name, words, served):
+def main_fix_launch(requests, label, repo, name, words, served):
     """The launch crew main fix <kit> <name> "<the failure's words>" appends (Decision 11; Decision 15 of
     the-team-machinery-leaves), as (act, work, its fields as plan.request takes them), or (None, why): a place of the fix
     kind named main--<name>, cut from main, in the kit's repository (repo, as the drive's kits name it) for the
@@ -1848,7 +1927,7 @@ def main_fix_launch(plan, requests, label, repo, name, words, served):
         return None, (f"fix {name} of {kit}'s main is in use: it is launched as Flume place {l.get('Name')} (request "
                       f"{l.get('Request')}), so name this fix differently")
     return ("launch", work, {
-        "Repo": repo, "Kind": "fix", "Name": f"main--{name}", "Base": "main", "Priority": main_priority(plan),
+        "Repo": repo, "Kind": "fix", "Name": f"main--{name}", "Base": "main", "Priority": main_priority(),
         "Intent": f"{label}/main/{kit}", "Recipient": f"{label}/ops", "Hold": "submission", "Brief": words}), None
 
 

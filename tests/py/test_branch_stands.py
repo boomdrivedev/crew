@@ -33,7 +33,7 @@ def started(*work):
     and requests.rec's records as it leaves them."""
     w = FactsWrite(flume_plan([("x", None, None)], list(work)), label="madswan")
     w.plan.bolt("x").set("Path", "flume")
-    plan.reach_places(FLEET, w, "x")
+    plan.reach_places(FLEET, w, "x", priority=runner.FIRST)
     return w, plan.Plan(w.files["requests.rec"]).recs("Request")
 
 

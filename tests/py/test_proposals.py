@@ -4,7 +4,7 @@ plan its commands leave, applied in order to the plan in memory, and a start it 
 (plan.check_ops, plan.apply_all). Writing, recording and telling the planner are the proposals journey's
 (t-journey-plan)."""
 import pytest
-from facts import FLEET, FactsWrite, apply, keeping, plan_text, units_of
+from facts import FLEET, FactsWrite, apply, based, keeping, plan_text, units_of
 
 import plan
 import runner
@@ -196,7 +196,7 @@ class TestRestsOnAccepted:
         assert "with an amendment still marked proposed" in plan.unaccepted([("unit", "u", KIT, self.REPO, 33)], held)
 
     def items(self, *dos, units=()):
-        w = apply(FactsWrite(plan_text(bolts=[("held", KIT, "swb-1")], units=list(units))), *dos)
+        w = apply(based(FactsWrite(plan_text(bolts=[("held", KIT, "swb-1")], units=list(units)))), *dos)
         return plan.record_items(self.FLEET, "wldn", w.plan, args(*dos))
 
     def test_new_bolts_and_units_name_their_records_by_kit_or_by_repository(self):
@@ -207,7 +207,7 @@ class TestRestsOnAccepted:
     def test_a_queued_unit_moved_into_a_bolt_is_read_from_the_plan(self):
         text = plan_text(bolts=[("held", KIT, "swb-1")], units=[("q", KIT, None, [])]).replace(
             "Intent: Unit q.\n", "Intent: Unit q.\nSource: docs/adr/0033\n")
-        w = apply(FactsWrite(text), "unit move q held")
+        w = apply(based(FactsWrite(text)), "unit move q held")
         assert plan.record_items(self.FLEET, "wldn", w.plan, args("unit move q held")) == [("unit", "q", KIT, self.REPO, 33)]
 
     def test_work_the_proposal_does_not_make_new_is_not_read(self):
@@ -222,7 +222,7 @@ class TestRestsOnAccepted:
         """bolt-plan "A source read as written": a source naming WilldanGroup/old-board's record, in work whose kit is
         switchboard-kit, is read in WilldanGroup/old-board as the source names it, beside sluice's."""
         dos = (f'unit add n "N." --bolt held --source WilldanGroup/old-board:docs/adr/0017 --source agentplot/sluice:docs/adr/0022',)
-        w = apply(FactsWrite(plan_text(bolts=[("held", KIT, "swb-1")])), *dos)
+        w = apply(based(FactsWrite(plan_text(bolts=[("held", KIT, "swb-1")]))), *dos)
         assert plan.record_items(self.FLEET, "wldn", w.plan, args(*dos)) == [
             ("unit", "n", "WilldanGroup/old-board", "WilldanGroup/old-board", 17), ("unit", "n", "agentplot/sluice", "agentplot/sluice", 22)]
 

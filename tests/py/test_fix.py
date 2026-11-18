@@ -22,7 +22,7 @@ class TestAFixOfAStartedBolt:
         """x, started, its units launched in crew's repository as the start launches them."""
         w = FactsWrite(flume_plan([("x", None, None)], [(u, "x", [], "unit", []) for u in work]), runners=runners, label="madswan")
         w.plan.bolt("x").set("Path", "flume")
-        plan.reach_places(self.FLEET, w, "x")
+        plan.reach_places(self.FLEET, w, "x", priority=runner.FIRST)
         return w
 
     def fix(self, w, mode, name, words=""):
@@ -37,7 +37,7 @@ class TestAFixOfAStartedBolt:
         assert self.fix(w, "start", "rail-word", "Say 'land' for a started bolt") == dict(n=2, host=None, repo="crew")
         assert self.launches(w)[1] == {
             "Request": "2", "Act": "launch", "Work": "fix/x/rail-word", "Repo": "crew", "Kind": "fix",
-            "Name": "x--rail-word", "Base": "bolt/x", "Priority": "1", "Intent": "madswan/x",
+            "Name": "x--rail-word", "Base": "bolt/x", "Priority": "1000000000000", "Intent": "madswan/x",
             "Recipient": "madswan/planner", "Brief": "Say 'land' for a started bolt"}
         assert w.subject == "plan(x): fix rail-word"
 

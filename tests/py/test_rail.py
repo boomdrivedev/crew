@@ -65,22 +65,29 @@ FOUND = [("wldn", "WilldanGroup/crew-state", "tip", None)]
 
 def runs(p=None, at=None, before=None, numbered=None, read=True):
     """wldn's requests and the runner on the box as rail_rows takes them (runs): each unit and chore of each started
-    bolt of the plan (the_plan's by default) launched as a start launches it (plan.reach_places), then each bolt's base
-    place (runner.bolt_launch), unanswered, so a started bolt is one of this crew's and not one started before bolts
-    were base places, after the requests
+    bolt of the plan (the_plan's by default) launched as a start launches it (plan.reach_places) at the number a start
+    gives it (facts.numbered), then each bolt's base place (runner.bolt_launch), unanswered, so a started bolt is one of
+    this crew's and not one started before bolts were base places, a bolt with no work to launch having its base place
+    launched in its pieces' turn, at its number, so the bolts after it are numbered below it; after the requests
     before holds (requests.rec's text), and the runner carrying each at the flume 0.3.6 status fixture at names for it
     ({unit: fixture}), zone-one landed on its bolt, so merged, unless given otherwise, and any other unanswered, and
     each request of before's at the fixture numbered names for it ({its number: fixture}); no runner read with read
     false."""
-    from facts import FactsWrite, ran
+    from facts import FactsWrite, numbered as numbering, ran
     import runner
     w = FactsWrite((p or the_plan()).text(), files={"requests.rec": before} if before else None, label="wldn")
+    based = set()
     for b in w.plan.bolts():
         if plan.started(b):
-            plan.reach_places(FLEET, w, b.name())
+            given = numbering(w, b.name())
+            if not plan.reach_places(FLEET, w, b.name(), priority=given):  # no work to launch: its base place now, at its number
+                act, work, fields = runner.bolt_launch(w.plan, b.name(), "wldn", given)
+                plan.request(w, act, work, **fields)
+                based.add(b.name())
     for b in w.plan.bolts():  # each started bolt's base place, after the pieces so their numbers stand, unanswered
-        if plan.started(b):
-            act, work, given = runner.bolt_launch(w.plan, b.name(), "wldn")
+        if plan.started(b) and b.name() not in based:
+            have = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
+            act, work, given = runner.bolt_launch(w.plan, b.name(), "wldn", runner.priority_of(have, b.name()))
             plan.request(w, act, work, **given)
     requests = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
     n = {r.get("Work").split("/", 1)[1]: r.get("Request") for r in requests if r.get("Act") == "launch"}
@@ -1202,7 +1209,7 @@ class TestSweepJudged:
         there = card("proposal/4", "req_p4", "wldn-planner", host=BOX)
         rec = card("record/atlas-kit/0021", "req_r1", "wldn-design")
         assert self.judged(cards_=[there, rec]) == {"gone": [], "questions": [], "held": [], "none": [], "again": [], "settled": [],
-                                                    "unread": [], "left_fleet": [], "records": [rec], "waiting_on_owner": []}
+                                                    "unread": [], "left_fleet": [], "records": [rec], "waiting_on_owner": [], "moved": []}
         proposed = [did("record.proposed", On=["record/atlas-kit/0021"], Commit=["WilldanGroup/atlas-kit@" + "a" * 40], By="wldn-design")]
         assert self.judged(cards_=[rec], entries=proposed)["gone"] == []
 
@@ -1260,7 +1267,7 @@ class TestSweepJudged:
                   did("card.post", 5, Key="deploy/dev", Refused="Pending You refused post_request: x")]
         assert self.judged(rows=[row("deploy/dev", "operations")], cards_=[p4], entries=recent) == {"gone": [], "questions": [], "held": [], "none": [],
                                                                                                 "again": [], "settled": [], "unread": [], "left_fleet": [],
-                                                                                                "records": [], "waiting_on_owner": []}
+                                                                                                "records": [], "waiting_on_owner": [], "moved": []}
         old = [dict(e, At=iso(plan.CARD_RETRY // 60 + 1)) for e in recent]
         j = self.judged(rows=[row("deploy/dev", "operations")], cards_=[p4], entries=old)
         assert ([c for c, *_ in j["gone"]], j["none"]) == ([p4], [row("deploy/dev", "operations")])
@@ -1319,7 +1326,7 @@ class TestSweepJudged:
         p5 = card("proposal/5", "req_p5", "wldn-planner")
         assert self.judged(cards_=[p5], proposed={1, 2, 3, 4}) == {"gone": [], "questions": [], "held": [], "none": [], "again": [],
                                                                     "settled": [], "unread": [], "left_fleet": [], "records": [],
-                                                                    "waiting_on_owner": []}
+                                                                    "waiting_on_owner": [], "moved": []}
         assert self.judged(cards_=[p5], proposed=None)["gone"] == []
         assert self.judged(cards_=[p5], proposed={4, 5})["gone"] == [(p5, None, "its proposal is closed")]
         assert self.judged(rows=[row("proposal/5")], cards_=[p5], proposed={4, 5})["held"] == [(p5, row("proposal/5"))]
@@ -2835,3 +2842,56 @@ class TestABoltOnMainHasNoLandLine:
         assert self.land_lines(monkeypatch, held=()) == [
             f"apex-zones, on {BOX}, in Flume stream wldn: apex-zones was started before bolts were base places and lands under "
             "the crew that started it"]
+
+
+class TestStepCardsFold:
+    """rail-cards "The rail's read changes a step's card that does not name its environments as they stand" (record
+    0070, Decision 7): the cards from before record 0070, one for each host's record of one step, become one, and a
+    card whose row gained a host is changed in place, at the rail's read on the main level's host."""
+
+    def es(self):
+        from test_ops import disk, done_before
+        return (done_before("mac-studio", 6) + done_before("macbook-pro", 7) + done_before("deneb", 41)
+                + [disk("mac-studio", 2), disk("macbook-pro", 3), disk("deneb", 4)])
+
+    def posts(self, *keyed):
+        return [dict(Act="card.post", Key=k, Card=c, By="wldn-ops", At=iso(20), **f) for k, c, f in keyed]
+
+    def rows(self, es, posts):
+        import ops
+        return [dict(r, at=NOW) for r in ops.rows(None, "wldn", es, posts)]
+
+    def test_three_cards_from_before_become_one_the_first_hosts_changed_and_the_others_closed_naming_it(self):
+        es, posts = self.es(), self.posts(("op/mac-studio/7", "req_7", {}), ("op/macbook-pro/8", "req_8", {}), ("op/deneb/42", "req_42", {}))
+        rows_ = self.rows(es, posts)
+        assert [r["key"] for r in rows_] == ["op/mac-studio/7"]
+        c7, c8, c42 = (card(k, c, "wldn-ops") for k, c, _ in [("op/mac-studio/7", "req_7", 0), ("op/macbook-pro/8", "req_8", 0), ("op/deneb/42", "req_42", 0)])
+        j = plan.sweep_judged("mac-studio", rows_, [c7, c8, c42], es + posts, {"op/mac-studio/7": ("wldn-ops", "mac-studio")}, set(), set(), NOW)
+        assert j["moved"] == [(c7, rows_[0], "macbook-pro waits on it too; deneb waits on it too")]
+        assert j["gone"] == [(c8, None, "Asked on op/mac-studio/7 with mac-studio and deneb"),
+                             (c42, None, "Asked on op/mac-studio/7 with mac-studio and macbook-pro")]
+        raised = []
+        out, acts = swept(rows_, [c7, c8, c42], es + posts,
+                          raises={"op": lambda fleet, row, acts=None, note="Raised again": raised.append((row["key"], note)) or "req_7"})
+        assert raised == [("op/mac-studio/7", "macbook-pro waits on it too; deneb waits on it too")]
+        assert [(d["key"], d["did"], d["words"]) for d in out["done"]] == [
+            ("op/macbook-pro/8", "withdrawn", "Asked on op/mac-studio/7 with mac-studio and deneb"),
+            ("op/deneb/42", "withdrawn", "Asked on op/mac-studio/7 with mac-studio and macbook-pro"),
+            ("op/mac-studio/7", "changed", "macbook-pro waits on it too; deneb waits on it too")]
+
+    def test_a_card_whose_row_gained_a_host_is_changed_in_place_and_one_the_user_answered_is_left(self):
+        from test_ops import S1
+        es = self.es()
+        posts = self.posts(("op/mac-studio/7", "req_7", {"Heads": f"mac-studio@{S1} macbook-pro@{S1}"}))
+        rows_ = self.rows(es, posts)
+        c7 = card("op/mac-studio/7", "req_7", "wldn-ops")
+        owners = {"op/mac-studio/7": ("wldn-ops", "mac-studio")}
+        assert plan.sweep_judged("mac-studio", rows_, [c7], es + posts, owners, set(), set(), NOW)["moved"] == [(c7, rows_[0], "deneb waits on it too")]
+        answered = posts + [dict(Act="card.answer", Card="req_7", By="wldn-ops", At=iso(10))]
+        assert plan.sweep_judged("mac-studio", rows_, [c7], es + answered, owners, set(), set(), NOW)["moved"] == []
+        same = self.posts(("op/mac-studio/7", "req_7", {"Heads": f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1}"}))
+        assert plan.sweep_judged("mac-studio", self.rows(es, same), [c7], es + same, owners, set(), set(), NOW)["moved"] == []
+        from test_ops import DISK, e
+        done = es + [e("ops.step", env="deneb", minutes=9, Head=S1, Key=DISK, State="done", Doer="user")]
+        assert plan.sweep_judged("mac-studio", self.rows(done, same), [c7], done + same, owners, set(), set(), NOW)["moved"] == [
+            (c7, self.rows(done, same)[0], "deneb's is recorded done")]

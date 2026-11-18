@@ -6,6 +6,7 @@ step's card is raised, one at a time. That each act is an entry of the run recor
 host, that crew ops word and steps read them back, that quiet reads the host's agents and test slots, that each card
 is posted, changed and closed, and that a command run elsewhere runs there are the ops journey's (t-journey-ops)."""
 import io
+import re
 
 import pytest
 
@@ -95,10 +96,12 @@ class TestRows:
         rows = ops.rows(None, "swancloud", steps)
         assert [r["key"] for r in rows] == ["op/mac-studio/2", "op/mac-studio/3"]
         assert rows[0]["what"] == [f"an operation after the deploy of mac-studio to aaaaaaa (swancloud), yours to do: Restart the herdr server\nonce the teams are quiet."]
-        assert rows[0]["cmds"][0] == ("done", f"crew ops step mac-studio --to {S1} --key restart-herdr/1 --state done --label swancloud")
+        assert rows[0]["cmds"][0] == ("done", "crew ops settle op/mac-studio/2 --state done --label swancloud")
+        assert rows[0]["heads"] == [f"mac-studio@{S1}"]
         assert rows[1]["what"] == ["an operation on mac-studio (swancloud), yours to do: rotate-tailnet-key"]
-        assert rows[1]["cmds"] == [("done", "crew ops step mac-studio --key rotate-tailnet-key --state done --label swancloud"),
-                                   ("decline", "crew ops step mac-studio --key rotate-tailnet-key --state declined --label swancloud")]
+        assert rows[1]["cmds"] == [("done", "crew ops settle op/mac-studio/3 --state done --label swancloud"),
+                                   ("decline", "crew ops settle op/mac-studio/3 --state declined --label swancloud")]
+        assert rows[1]["heads"] == ["mac-studio"]
         assert ops.rows(None, "swancloud", steps + [e("ops.step", minutes=4, Key="rotate-tailnet-key", State="declined", Doer="user")])[1:] == []
 
     def test_a_gates_step_is_a_row_saying_the_deploy_waits_at_its_gate_for_the_user_with_its_link(self):
@@ -264,13 +267,51 @@ class TestRefusals:
         (["step", "mac-studio", "--label", "wldn", "--key", "k", "--state", "waiting", "--doer", "main-ops", "--when", "quiet", "--held"], None),
         (["offer", "mac-studio", "--label", "wldn", "--from", "none", "--to", S1, "--notes", "n.md", "--steps", "s.txt"], None),
         (["offer", "mac-studio", "--label", "wldn", "--from", "none", "--to", S1], None),
-        (["approve", "mac-studio", "--label", "wldn", "--to", S1, "--ticked", "1,x"], "--ticked 1,x is no list of the card's step numbers: 1 or 1,2"),
-        (["approve", "mac-studio", "--label", "wldn", "--to", S1, "--ticked", "1,2"], None),
+        (["approve", "mac-studio", "--label", "wldn", "--to", S1], None),
+        (["settle", "op/mac-studio/7", "--label", "wldn", "--state", "done"], None),
+        (["settle", "op/Mac/7", "--label", "wldn", "--state", "done"], "op/Mac/7 is no step card's key: op/<env>/<n>, as the rail shows it"),
         (["record", "mac-studio", "--label", "wldn", "--to", S1, "--act", "end", "--outcome", "failed", "--does", "read the log"], None),
         (["record", "mac-studio", "--label", "wldn", "--to", S1, "--act", "step", "--step", "guests", "--outcome", "failed",
           "--does", "read the log"], None)])
     def test_a_commit_an_environment_a_drive_or_a_key_crew_cant_take_is_refused(self, argv, said):
         assert ops.args_refusal(FLEET, ops.parser().parse_args(argv)) == said
+
+    def test_approve_takes_no_ticks_and_settle_takes_done_or_declined_alone(self, capsys):
+        """main-level "Ticks given": --ticked from an older brief is refused as an argument approve does not take."""
+        for argv in (["approve", CHA, "--label", "afterthought", "--to", S2, "--ticked", "1"],
+                     ["settle", "op/mac-studio/7", "--label", "afterthought", "--state", "failed"]):
+            with pytest.raises(SystemExit) as x:
+                ops.parser().parse_args(argv)
+            assert x.value.code == 2
+        assert "unrecognized arguments: --ticked 1" in capsys.readouterr().err
+
+    def test_an_approval_while_a_step_it_waits_on_is_open_is_refused_naming_each_step_and_its_card(self):
+        """main-level "An approval while a step it waits on is open"."""
+        rowed = ops.keyed(CUTOVER)
+        waits = ops.deploy_waits(CUTOVER, CHA, ops.handed_steps(WAITS.replace(SRV, CHA), CHA, "afterthought")[0])
+        assert ops.waited_refusal(CHA, S2, waits, rowed) == (
+            f'the deploy of {CHA} to bbbbbbb waits on your step "{MOVE}", asked on op/mac-studio/7: its card is raised, and your word '
+            "given, once that step is done")
+        unrecorded = ops.deploy_waits([CUTOVER_OFFER], CHA, ops.handed_steps(WAITS.replace(SRV, CHA), CHA, "afterthought")[0])
+        assert ops.waited_refusal(CHA, S2, unrecorded, {}) == (
+            f'the deploy of {CHA} to bbbbbbb waits on your step "{MOVE}", which its deployer has not recorded on {CHA} yet: its card is '
+            "raised, and your word given, once that step is done")
+        done = CUTOVER + [e("ops.step", env=CHA, minutes=9, Head=S2, Key=DISK, State="done", Doer="user")]
+        assert ops.waited_refusal(CHA, S2, ops.deploy_waits(done, CHA), ops.keyed(done)) is None
+
+    def test_the_refusal_is_recorded_and_no_word_given(self, monkeypatch, tmp_path):
+        import plan
+        emitted = []
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: CUTOVER)
+        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
+        monkeypatch.setattr(ops, "emit", lambda label, act, env, why, refused=None, **f: emitted.append((act, refused, f)))
+        monkeypatch.setattr(plan, "CardActs", lambda fleet: type("Acts", (), {"entries": lambda self, label: []})())
+        (tmp_path / "steps.txt").write_text(WAITS.replace(SRV, CHA))
+        with pytest.raises(ops.Refusal, match="asked on op/mac-studio/7"):
+            ops.approve(FLEET, ops.parser().parse_args(["approve", CHA, "--label", "afterthought", "--to", S2]))
+        (act, refused, f), = emitted
+        assert (act, f["Head"]) == ("ops.approve", S2) and refused.startswith(f"the deploy of {CHA} to bbbbbbb waits on your step")
+        assert ops.state(CUTOVER)[1] == {}
 
     def test_crew_ops_answers_help_as_the_deployers_probe_reads_it(self, capsys):
         with pytest.raises(SystemExit) as x:
@@ -652,10 +693,44 @@ class TestStepCard:
         assert (f["text"], f["doer"], f["held"], f["where"]) == ("rotate the kanidm admin password in its vault", "user", False, "a terminal on mac-studio")
         assert f["commands"] == ["clan vars generate swancloud-srv --generator kanidm-admin --regenerate", "clan machines update swancloud-srv"]
         c = cards.step_card(f)["card"]
-        assert (c["kind"], c["intent"], c["summary"]) == ("action", "do", "Only you hold the vault, and no check can tell it was done.")
+        assert (c["kind"], c["intent"], c["summary"]) == (
+            "action", "do", "Only you hold the vault, and no check can tell it was done. It waits on you on srv.")
+        assert c["title"] == "rotate the kanidm admin password in its vault, on srv"
         assert c["action"]["steps"][0]["command"] == "clan vars generate swancloud-srv --generator kanidm-admin --regenerate"
         assert c["action"]["done"] == "kanidm's login page takes the new password."
         assert ops.step_words(" ".join(ROTATE.split())) == ops.step_words(ROTATE)
+
+    def test_the_cutovers_card_is_a_plain_sentence_of_the_step_and_the_hosts_it_releases(self):
+        """rail-cards "The Archives disk's card": its words and the four hosts, its why, and no id of crew's."""
+        g, = ops.groups(CUTOVER)
+        f = ops.step_facts("mac-studio", 7, g["steps"][0][2], "afterthought", group=g["steps"])
+        out = cards.step_card(dict(f, key="op/mac-studio/7"))
+        c = out["card"]
+        assert out["key"] == "op/mac-studio/7" and out["heads"] == CUTOVER_HEADS.split()
+        assert c["title"] == f"Move the Archives disk from mac-studio to deneb, so mac-studio, macbook-pro, deneb and {CHA} can deploy"
+        said = f"It releases the deploys of mac-studio, macbook-pro, deneb and {CHA}; one answer settles it on each."
+        assert c["summary"] == f"{DISK_WHY} {said}"
+        assert not re.search(r"record \d|[a-z]+\.\d+", said + c["title"]) and "artifacts" not in c
+
+    def test_a_step_after_one_hosts_deploy_reads_after_its_deploy(self):
+        f = ops.step_facts("srv", 1, e("ops.step", env="srv", Head="c882cff" + "0" * 33, Key="rotate", State="waiting", Doer="user",
+                                       Text="Rotate the kanidm admin password."), "swancloud")
+        out = cards.step_card(f)
+        assert out["card"]["title"] == "Rotate the kanidm admin password, after srv's deploy"
+        assert out["heads"] == ["srv@c882cff" + "0" * 33] and out["card"]["summary"].endswith("It waits on you on srv.")
+
+    def test_nine_hosts_past_half_a_title_are_counted_and_named_in_the_summary(self):
+        """rail-cards "More hosts than the title holds"."""
+        hosts = [f"swancloud-host-{i}" for i in range(1, 10)]
+        steps = [disk(x, i, When="before") for i, x in enumerate(hosts)]
+        g, = ops.groups(steps)
+        c = cards.step_card(ops.step_facts(hosts[0], 1, steps[0], "swancloud", group=g["steps"]))["card"]
+        assert c["title"] == "Move the Archives disk from mac-studio to deneb, so 9 hosts can deploy"
+        assert all(x in c["summary"] for x in hosts) and len(c["title"]) <= cards.TITLE
+        long = [disk(x, i, When="before", Text="Move every disk " + "and every shelf " * 8 + "to deneb.") for i, x in enumerate(hosts)]
+        g, = ops.groups(long)
+        c = cards.step_card(ops.step_facts(hosts[0], 1, long[0], "swancloud", group=g["steps"]))["card"]
+        assert c["title"].endswith("…, so 9 hosts can deploy") and len(c["title"]) <= cards.TITLE
 
     def test_a_held_steps_card_is_a_choice_of_when_saying_what_now_cuts(self):
         step = e("ops.step", Key="restart-teams/1", State="waiting", Doer="main-ops", When="quiet held", Text="restart crew's teams\n- why: It ends a stage.")
@@ -718,13 +793,13 @@ class TestOneStepCardAtATime:
 
     def test_the_first_step_that_waits_on_the_user_is_raised_and_the_next_only_once_its_card_closes(self):
         due, open_ = ops.step_due(self.STEPS, self.DEPLOY, "mac-studio")
-        assert (due[0], due[1], open_) == (2, ("mac-studio", S1, "rotate/1"), None)
+        assert (due["row"], due["steps"][0][1], open_) == ("op/mac-studio/2", ("mac-studio", S1, "rotate/1"), None)
         posted = self.DEPLOY + [card("card.post", "op/mac-studio/2", "req_s2", 2, By="wldn-ops")]
         assert ops.step_due(self.STEPS, posted, "mac-studio") == (None, "op/mac-studio/2")
         done = self.STEPS + [e("ops.step", minutes=4, Head=S1, Key="rotate/1", State="done")]
         closed = posted + [card("card.close", "op/mac-studio/2", "req_s2", 3, State="closed")]
         due, open_ = ops.step_due(done, closed, "mac-studio")
-        assert (due[0], due[1][2], open_) == (3, "restart-herdr/1", None)
+        assert (due["row"], due["steps"][0][1][2], open_) == ("op/mac-studio/3", "restart-herdr/1", None)
         follows = cards.follows_of("step", {"env": "mac-studio", "key": "op/mac-studio/3"}, closed, "wldn-ops")
         assert follows == "req_s2" and cards.follows_of("step", {"env": "mac-studio", "key": "op/mac-studio/2"}, self.DEPLOY, "wldn-ops") == "req_d"
 
@@ -733,16 +808,62 @@ class TestOneStepCardAtATime:
                              card("card.post", "op/mac-studio/3", "req_s3", 4), card("card.close", "op/mac-studio/3", "req_s3", 5),
                              card("card.post", "op/box/1", "req_b1", 6)]
         assert ops.step_due(self.STEPS, had, "mac-studio") == (None, None)
-        assert ops.step_due(self.STEPS, self.DEPLOY + had[-1:], "mac-studio")[0][0] == 2
+        assert ops.step_due(self.STEPS, self.DEPLOY + had[-1:], "mac-studio")[0]["row"] == "op/mac-studio/2"
 
     def test_a_rows_point_has_come_when_it_is_next_due_or_its_card_is_the_one_open_as_the_rails_sweep_asks(self):
-        assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/2")[0][0] == 2
+        assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/2")[0]["row"] == "op/mac-studio/2"
         assert ops.step_point(self.STEPS, self.DEPLOY, "op/mac-studio/3") == (None, "its step waits on no one, or another's card comes first")
         posted = self.DEPLOY + [card("card.post", "op/mac-studio/2", "req_s2", 2)]
-        assert ops.step_point(self.STEPS, posted, "op/mac-studio/2")[0][1] == ("mac-studio", S1, "rotate/1")
+        assert ops.step_point(self.STEPS, posted, "op/mac-studio/2")[0]["steps"][0][1] == ("mac-studio", S1, "rotate/1")
         assert ops.step_point(self.STEPS, posted, "op/mac-studio/3") == (None, "card op/mac-studio/2 is open: this step's card is raised when it closes")
         done = self.STEPS + [e("ops.step", minutes=4, Head=S1, Key="rotate/1", State="done")]
         assert ops.step_point(done, posted, "op/mac-studio/2") == (None, "its step no longer waits on the user")
+
+    SHARED = [card("card.post", "deploy/deneb", "req_dd", 1, By="afterthought-ops"),
+              card("card.post", "op/mac-studio/1", "req_m1", 2, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}")]
+
+    def test_a_shared_card_holds_a_hosts_own_step_back_and_its_card_then_follows_it(self):
+        """rail-cards "A shared step's card holds a host's own step back"."""
+        es = [disk("mac-studio", 1), disk("deneb", 2), disk("deneb", 3, key="rotate-kanidm", Text="Rotate the kanidm admin password.")]
+        assert ops.step_due(es, self.SHARED, "deneb") == (None, "op/mac-studio/1")
+        assert ops.step_point(es, self.SHARED, "op/deneb/2") == (None, "card op/mac-studio/1 is open: this step's card is raised when it closes")
+        done = es + [e("ops.step", env=x, minutes=4, Head=S1, Key=DISK, State="done", Doer="user") for x in ("mac-studio", "deneb")]
+        closed = self.SHARED + [card("card.close", "op/mac-studio/1", "req_m1", 5, State="closed")]
+        due, _ = ops.step_due(done, closed, "deneb")
+        assert due["row"] == "op/deneb/2"
+        assert cards.follows_of("step", {"env": "deneb", "key": "op/deneb/2"}, closed, "afterthought-ops") == "req_m1"
+
+    def test_two_shared_steps_recorded_in_opposite_orders_raise_one_then_the_other(self):
+        """rail-cards "Two shared steps recorded in opposite orders"."""
+        a, b = DISK, "rotate-kanidm"
+        es = [disk("mac-studio", 1, key=a), disk("deneb", 2, key=b), disk("mac-studio", 3, key=b), disk("deneb", 4, key=a)]
+        assert [ops.step_due(es, [], x)[0]["row"] for x in ("mac-studio", "deneb")] == ["op/mac-studio/1", "op/mac-studio/1"]
+        posted = [card("card.post", "op/mac-studio/1", "req_a", 5, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}")]
+        assert [ops.step_due(es, posted, x) for x in ("mac-studio", "deneb")] == [(None, "op/mac-studio/1")] * 2
+        done = es + [e("ops.step", env=x, minutes=6, Head=S1, Key=a, State="done", Doer="user") for x in ("mac-studio", "deneb")]
+        closed = posted + [card("card.close", "op/mac-studio/1", "req_a", 7, State="closed")]
+        assert [ops.step_due(done, closed, x)[0]["row"] for x in ("mac-studio", "deneb")] == ["op/deneb/1", "op/deneb/1"]
+
+    def test_a_step_a_host_records_after_the_answer_follows_the_answered_card_saying_so(self, monkeypatch):
+        """rail-cards "A host records the step after the user answered"."""
+        from test_card_commands import Acts, MATCHED, POSTED
+        answered = [card("card.post", "op/mac-studio/7", "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS),
+                    card("card.answer", "op/mac-studio/7", "req_7", 7, By="afterthought-ops"),
+                    card("card.close", "op/mac-studio/7", "req_7", 8, By="afterthought-ops", State="closed", Answer="done")]
+        settled = CUTOVER + [e("ops.step", env=x, minutes=9, Head=S2 if x == CHA else S1, Key=DISK, State="done", Doer="user")
+                             for x in ("mac-studio", "macbook-pro", "deneb", CHA)] + [disk(SRV, 10)]
+        due, _ = ops.step_due(settled, answered, SRV)
+        assert due["row"] == f"op/{SRV}/1" and ops.answered_card(settled, answered, due, "afterthought-ops") == "req_7"
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: settled)
+        monkeypatch.setattr(ops, "ops_where", lambda fleet, label: ("/b/main", "github.com/o/b"))
+        a = Acts({"match_area": (MATCHED, None), "post_request": (dict(POSTED, requestId="req_srv"), None)}, entries=answered,
+                 caller="afterthought-ops")
+        a.kits = lambda label: ()
+        assert ops.raise_step(FLEET, {"label": "afterthought", "key": f"op/{SRV}/1"}, a) == "req_srv"
+        sent = a.calls[-1][1]
+        assert sent["follows"] == "req_7" and sent["summary"].startswith(
+            "You answered the card before this one, posted 2026-10-12 11:06 UTC, by 11:08 UTC: done. Since then: "
+            f"{SRV} has recorded this step, which that answer did not settle.")
 
 
 class TestStepRecordedAgain:
@@ -763,8 +884,10 @@ class TestStepRecordedAgain:
         return card(act, key, card_id, minutes, By="swancloud-ops", **f)
 
     def again(self, *written, es=None):
-        """step_again on this host's record as written, its ops entries the drive's unless es gives them."""
-        return ops.step_again([x for x in written if x["Act"].startswith("ops.")] if es is None else es, list(written), self.K, "swancloud")
+        """step_again on this host's record as written, its ops entries the drive's unless es gives them, as (its card's
+        key, its id, the change note, whether its kind changed)."""
+        got = ops.step_again([x for x in written if x["Act"].startswith("ops.")] if es is None else es, list(written), self.K, "swancloud")
+        return got and (got["key"], got["card"], got["note"], got["kind_changed"])
 
     def test_a_step_recorded_again_with_new_words_changes_its_open_card_in_place_naming_what_changed(self):
         assert self.again(self.step(1, self.WAS), self.posted(), self.posted(), self.step(5, self.NOW)) == (
@@ -793,6 +916,75 @@ class TestStepRecordedAgain:
     def test_a_card_whose_steps_entry_this_hosts_record_no_longer_reaches_is_changed_to_the_step_as_recorded(self):
         assert self.again(self.posted(), self.step(5, self.NOW), es=[self.step(1, self.WAS), self.step(5, self.NOW)]) == (
             self.KEY, "req_2a16", "Recorded again", False)
+
+    # rail-cards "A step's card changes as environments come to it or leave it" (Decision 7): step_again over a shared
+    # card, and crew ops step's acts once it is recorded.
+    SHARED = "op/mac-studio/7"
+
+    def shared(self):
+        return [card("card.post", self.SHARED, "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS)]
+
+    def moved(self, es, k, cards_=None):
+        return ops.step_again(es, self.shared() if cards_ is None else cards_, k, "afterthought")
+
+    def test_a_fifth_host_recording_the_step_while_the_card_waits_changes_it_in_place(self):
+        es = CUTOVER + [disk(SRV, 9)]
+        got = self.moved(es, (SRV, S1, DISK))
+        assert (got["key"], got["card"], got["note"], got["close"], got["left"]) == (self.SHARED, "req_7", f"{SRV} waits on it too", None, False)
+        g, _ = ops.step_point(es, self.shared(), self.SHARED)
+        assert [ops.head_word(k) for _, k, _ in g["steps"]] == CUTOVER_HEADS.split() + [f"{SRV}@{S1}"]
+
+    def test_one_hosts_step_recorded_done_changes_it_to_name_the_rest(self):
+        es = CUTOVER + [e("ops.step", env="deneb", minutes=9, Head=S1, Key=DISK, State="done", Doer="user")]
+        got = self.moved(es, ("deneb", S1, DISK))
+        assert (got["note"], got["close"], got["left"]) == ("deneb's is recorded done", None, True)
+        g, _ = ops.step_point(es, self.shared(), self.SHARED)
+        assert [k[0] for _, k, _ in g["steps"]] == ["mac-studio", "macbook-pro", CHA]
+
+    def test_a_card_left_naming_no_step_is_closed_with_that_steps_state_and_an_answered_one_is_left(self):
+        one = [card("card.post", f"op/{SRV}/1", "req_s", 6, By="afterthought-ops", Heads=f"{SRV}@{S1}")]
+        for state, said in (("done", "Done."), ("declined", "Skipped."), ("failed", "Recorded failed.")):
+            es = [disk(SRV, 1), e("ops.step", env=SRV, minutes=2, Head=S1, Key=DISK, State=state, Doer="user")]
+            assert self.moved(es, (SRV, S1, DISK), one)["close"] == said
+        answered = self.shared() + [card("card.answer", self.SHARED, "req_7", 7, By="afterthought-ops")]
+        got = self.moved(CUTOVER + [disk(SRV, 9)], (SRV, S1, DISK), answered)
+        assert (got["answered"], got["note"], got["close"]) == (True, None, None)
+
+    @pytest.fixture
+    def acts(self, monkeypatch):
+        import plan
+        got = {"es": list(CUTOVER), "cards": self.shared(), "raised": [], "closed": [], "heard": []}
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: got["es"])
+
+        class Acts:
+            def __init__(self, fleet):
+                pass
+
+            def entries(self, label):
+                return got["cards"]
+        monkeypatch.setattr(plan, "CardActs", Acts)
+        monkeypatch.setattr(plan, "card_heard", lambda acts, key, card_, owner: got["heard"].append(key))
+        monkeypatch.setattr(plan, "row_card_close", lambda fleet, label, owner, key, outcome=None, reason=None, acts=None, **k:
+                            got["closed"].append((key, outcome)))
+        monkeypatch.setattr(ops, "raise_step", lambda fleet, row, acts=None, note="Raised again", kind_changed=False:
+                            got["raised"].append((row["key"], note)) or "req_new")
+        return got
+
+    def test_crew_ops_step_changes_the_card_and_raises_the_next_due_on_a_host_it_left(self, acts):
+        acts["es"] += [disk("deneb", 9, key="rotate-kanidm", Text="Rotate the kanidm admin password."),
+                       e("ops.step", env="deneb", minutes=10, Head=S1, Key=DISK, State="done", Doer="user")]
+        ops.raise_next_step(FLEET, "afterthought", "deneb", ("deneb", S1, DISK))
+        assert acts["raised"] == [(self.SHARED, "deneb's is recorded done")]
+        acts["cards"].append(card("card.update", self.SHARED, "req_7", 11, By="afterthought-ops", Heads=CUTOVER_HEADS.replace(f"deneb@{S1} ", "")))
+        acts["raised"].clear()
+        ops.raise_next_step(FLEET, "afterthought", "deneb", ("deneb", S1, DISK))
+        assert acts["raised"] == [("op/deneb/43", "Raised again")]
+
+    def test_crew_ops_step_closes_a_card_left_naming_no_step(self, acts):
+        acts["es"] += [e("ops.step", env=x, minutes=10, Head=S2 if x == CHA else S1, Key=DISK, State="declined", Doer="user")
+                       for x in ("mac-studio", "macbook-pro", "deneb", CHA)]
+        ops.raise_next_step(FLEET, "afterthought", CHA, (CHA, S2, DISK))
+        assert acts["closed"] == [(self.SHARED, "Skipped.")]
 
 
 class TestRaisedAgain:
@@ -954,7 +1146,7 @@ class TestTheStepsADeployWaitsOn:
         assert ops.handed_steps("step\t1\tmain-ops\tbefore\tsrv\twhy\tmove it\n", "srv", "swancloud") == (
             None, "line 1 is a step the deploy waits on, which is the user's alone, with the doer main-ops")
         assert ops.handed_steps("step\t1\tuser\tbefore\t\twhy\tmove it\nstep\t1\tuser\tbefore\t\twhy\tplug it\n", "srv", "swancloud") == (
-            None, "line 2 numbers a step the deploy waits on 1, as an earlier line does, so its box can't be told apart")
+            None, "line 2 numbers a step the deploy waits on 1, as an earlier line does, so the two can't be told apart")
 
     def test_the_deploy_waits_on_each_step_marked_before_with_the_users_step_the_record_holds_in_its_words(self):
         assert ops.waited_on(handed_waits(), [SRV_OFFER], SRV) == [dict(n="1", text=MOVE, why=WHY, to=None, key=None, state=None)]
@@ -966,54 +1158,93 @@ class TestTheStepsADeployWaitsOn:
         assert ops.waited_on(handed_waits(), others, SRV)[0]["key"] is None
         again = [SRV_OFFER, waiting(2, head=S1), e("ops.step", env=SRV, minutes=3, Head=S1, Key=DISK, State="declined"), waiting(4)]
         assert [(w["to"], w["state"]) for w in ops.waited_on(handed_waits(), again, SRV)] == [(S2, "waiting")]
+        why = waiting(5, text=f"{MOVE}\n- why: {WHY}")
+        assert ops.waited_on(handed_waits(), [SRV_OFFER, why], SRV)[0]["key"] == DISK  # tied by its words, before its fields
 
     def test_a_users_step_in_the_words_of_one_the_offer_waits_on_is_recorded_as_one(self):
         assert ops.marked_before("user", "Move the Archives disk\n from mac-studio to deneb.", handed_waits())
+        assert ops.marked_before("user", f"{MOVE}\n- why: {WHY}", handed_waits())
         assert not ops.marked_before("main-ops", MOVE, handed_waits())
         assert not ops.marked_before("user", "rotate the kanidm admin password", handed_waits())
         assert not ops.marked_before("user", MOVE, []) and not ops.marked_before("user", None, handed_waits())
 
-    def test_a_step_the_open_offer_waits_on_has_no_row_or_card_of_its_own_and_the_deploys_row_says_it_waits_on_it(self):
-        es = [SRV_OFFER, waiting(2)]
-        row, = ops.rows(None, "swancloud", es)
-        assert row["key"] == f"deploy/{SRV}" and row["what"] == [
-            f"deploy {SRV} (swancloud) to bbbbbbb, from aaaaaaa: crew raises its card in swancloud-ops's name, and holding it is the "
-            "word to deploy, once the step of yours it waits on is ticked on it"]
-        assert ops.step_due(es, [], SRV) == (None, None)
-        assert ops.step_point(es, [], f"op/{SRV}/1") == (None, "its step waits on no one, or another's card comes first")
-        assert ops.environments(es)[SRV]["waiting"][0]["row"] is None
-        ended = es + [e("ops.deploy", env=SRV, minutes=4, Head=S2, Phase="end", Outcome="ok")]
-        assert [r["key"] for r in ops.rows(None, "swancloud", ended)] == [f"op/{SRV}/1"]
-        assert ops.step_due(ended, [], SRV)[0][0] == 1 and ops.environments(ended)[SRV]["waiting"][0]["row"] == f"op/{SRV}/1"
+    def test_no_deploy_card_while_the_step_is_open_its_row_naming_the_steps_card_and_the_sweep_owing_it_none(self):
+        """rail-cards "chuck-herdr-alpha's deploy waits on the step"."""
+        import plan
+        rows = ops.rows(None, "afterthought", CUTOVER)
+        assert [r["key"] for r in rows] == [f"deploy/{CHA}", "op/mac-studio/7"]
+        assert rows[0]["what"] == [f'deploy {CHA} (afterthought) to bbbbbbb, from aaaaaaa: it waits on your step "{MOVE}", asked on '
+                                   "op/mac-studio/7, and crew raises its card in afterthought-ops's name once that is done"]
+        assert rows[0]["asks"] is False and "asks" not in ops.rows(None, "afterthought", [CUTOVER_OFFER])[0]
+        unrecorded, = ops.rows(None, "afterthought", [CUTOVER_OFFER], handed={CHA: ops.handed_steps(WAITS.replace(SRV, CHA), CHA, "afterthought")[0]})
+        assert unrecorded["what"] == [f'deploy {CHA} (afterthought) to bbbbbbb, from aaaaaaa: it waits on your step "{MOVE}", which its '
+                                      f"deployer has not recorded on {CHA} yet, and crew raises its card in afterthought-ops's name once that is done"]
+        waits = ops.deploy_waits(CUTOVER, CHA)
+        assert ops.deploy_move(CUTOVER, CHA, None, waits, ops.keyed(CUTOVER)) == (
+            None, f'it waits on your step "{MOVE}", asked on op/mac-studio/7: its card is raised once that is done')
+        owners = {r["key"]: ("afterthought-ops", "mac-studio") for r in rows}
+        j = plan.sweep_judged("mac-studio", [dict(r, label="afterthought") for r in rows], [], list(CUTOVER), owners, set(), set(),
+                              plan.utc("2026-10-12T12:00:00Z"))
+        assert [r["key"] for r in j["none"]] == ["op/mac-studio/7"]
+        assert ops.environments(CUTOVER)["mac-studio"]["waiting"][0]["row"] == "op/mac-studio/7"
+        assert ops.environments(CUTOVER)[CHA]["waiting"][0]["row"] == "op/mac-studio/7"
 
-    def test_an_approval_with_a_step_it_waits_on_open_is_refused_naming_it_and_its_send_with_the_step_ticked_is_the_word(self):
-        waited = ops.waited_on(handed_waits(), [SRV_OFFER, waiting(2)], SRV)
-        assert ops.ticked_refusal(SRV, S2, waited, []) == (
-            f'the deploy of {SRV} to bbbbbbb waits on your step 1 ("{MOVE}"), not ticked: the word is its card\'s send with every '
-            "step it waits on ticked")
-        assert ops.ticked_refusal(SRV, S2, waited, ["1"]) is None
-        assert ops.ticked_refusal(SRV, S2, waited, ["1", "3"]) == f"--ticked 3 is no step the deploy of {SRV} to bbbbbbb waits on: it waits on step 1"
-        assert ops.ticked_refusal(SRV, S2, [], ["1"]) == f"--ticked 1 is no step the deploy of {SRV} to bbbbbbb waits on: it waits on none"
-        assert ops.ticked_refusal(SRV, S2, [], []) is None
-        done = ops.waited_on(handed_waits(), [SRV_OFFER, waiting(2), e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done")], SRV)
-        assert ops.ticked_refusal(SRV, S2, done, []) is None
-        unrecorded = ops.waited_on(handed_waits(), [SRV_OFFER], SRV)
-        assert ops.ticked_refusal(SRV, S2, unrecorded, ["1"]) == (
-            f'the deploy of {SRV} to bbbbbbb waits on your step 1 ("{MOVE}"), which its deployer has not recorded on {SRV} yet, so '
-            f"crew can't mark it done: approve again once crew ops steps {SRV} lists it")
+    def test_an_unanswered_card_is_withdrawn_when_a_newer_offer_brings_a_step(self):
+        """rail-cards "A newer offer brings a step while the deploy's card waits"."""
+        newer = [e("ops.offer", env=SRV, minutes=0, Head=S1, Base="none"), SRV_OFFER]
+        waits = ops.deploy_waits(newer, SRV, handed_waits())
+        assert ops.deploy_move(newer, SRV, "req_1", waits, {}) == (
+            "withdraw", f'It now waits on your step "{MOVE}", which its deployer has not recorded on {SRV} yet: its card is raised '
+                        "again once that is done.")
+        answered = ops.deploy_move(newer, SRV, "req_1", waits, {}, answered=True)
+        assert answered[0] is None and ops.deploy_move(newer, SRV, "req_1", [], {})[0] == "change"
 
-    def test_a_shared_box_named_by_one_number_is_refused_naming_the_steps_it_leaves(self):
-        """rail-cards "The send's shared box named as one step": before:4-5-6-7 ticked and passed as 4 alone gives no word."""
-        words = [f"Do step {i} of the move." for i in range(1, 8)]
-        handed = ops.handed_steps("".join(f"step\t{i}\tuser\tbefore\t{SRV}\tWhy step {i}.\t{t}\n" for i, t in enumerate(words, 1)),
-                                  SRV, "swancloud")[0]
-        es = [SRV_OFFER] + [waiting(1 + i, text=t, key=f"{i}" * 12) for i, t in enumerate(words, 1)]
-        waited = ops.waited_on(handed, es, SRV)
-        assert [(w["n"], w["state"], bool(w["key"])) for w in waited] == [(str(i), "waiting", True) for i in range(1, 8)]
-        assert ops.ticked_refusal(SRV, S2, waited, ["1", "2", "3", "4"]) == (
-            f'the deploy of {SRV} to bbbbbbb waits on your steps 5 ("{words[4]}"), 6 ("{words[5]}") and 7 ("{words[6]}"), '
-            "not ticked: the word is its card's send with every step it waits on ticked")
-        assert ops.ticked_refusal(SRV, S2, waited, [str(i) for i in range(1, 8)]) is None
+    @pytest.fixture
+    def raised(self, monkeypatch, tmp_path):
+        import plan
+        got = {"es": [SRV_OFFER, waiting(2)], "closed": [], "changed": []}
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: got["es"])
+        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
+        monkeypatch.setattr(ops, "kit_range", lambda fleet, label, frm, to: (None, None, "not read"))
+        monkeypatch.setattr(ops, "ops_where", lambda fleet, label: ("/b/main", "github.com/o/b"))
+        monkeypatch.setattr(ops.record, "gather", lambda fleet, labels, since: (got["cards"], {}))
+        monkeypatch.setattr(plan, "row_card_close", lambda fleet, label, owner, key, outcome=None, reason=None, acts=None, **k:
+                            got["closed"].append((key, reason)))
+
+        def change(fleet, label, owner, build, facts, note, where, acts=None, kind_changed=False, anew=None, since=None):
+            c = build(facts)["card"]
+            got["changed"].append((kind_changed, c["kind"], c.get("follows"), since))
+            return "req_2"
+        monkeypatch.setattr(plan, "row_card_change", change)
+        (tmp_path / "steps.txt").write_text(WAITS)
+
+        class Acts:
+            def entries(self, label):
+                return got["cards"]
+        got["acts"] = Acts()
+        got["cards"] = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops", Head=S2, Form="boxes",
+                             At="2026-10-12T10:01:00Z")]
+        return got
+
+    def test_a_card_from_before_posted_as_boxes_is_withdrawn_while_its_step_is_open_or_followed_once_it_is_done(self, raised):
+        """rail-cards "A deploy card of boxes from before this change"."""
+        row = {"label": "swancloud", "key": f"deploy/{SRV}"}
+        assert ops.raise_deploy(FLEET, row, raised["acts"]) is None
+        assert raised["closed"] == [(f"deploy/{SRV}", f'It now waits on your step "{MOVE}", asked on op/{SRV}/1: its card is raised again once '
+                                                        "that is done.")]
+        raised["es"].append(e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done", Doer="user"))
+        assert ops.raise_deploy(FLEET, row, raised["acts"]) == "req_2"
+        assert [(moved, kind) for moved, kind, _, _ in raised["changed"]] == [(True, "approve")]
+
+    def test_once_the_step_is_done_the_deploys_card_follows_the_steps_card(self, raised):
+        """rail-cards "The step done"."""
+        raised["cards"] = [dict(Act="card.post", Card="req_s", Key=f"op/{SRV}/1", By="swancloud-ops", Heads=f"{SRV}@{S2}", At="2026-10-12T10:03:00Z"),
+                           dict(Act="card.close", Card="req_s", Key=f"op/{SRV}/1", By="swancloud-ops", State="closed", At="2026-10-12T10:05:00Z")]
+        raised["es"].append(e("ops.step", env=SRV, minutes=4, Head=S2, Key=DISK, State="done", Doer="user"))
+        assert ops.raise_deploy(FLEET, {"label": "swancloud", "key": f"deploy/{SRV}"}, raised["acts"]) == "req_2"
+        (moved, kind, follows, since), = raised["changed"]
+        assert (moved, kind, follows) == (False, "approve", "req_s")
+        assert since == [f"Each step of yours the deploy of bbbbbbb to {SRV} waited on is done, and it waits on your word."]
 
 
 class TestTheDeployCardOfAStepItWaitsOn:
@@ -1021,174 +1252,228 @@ class TestTheDeployCardOfAStepItWaitsOn:
         steps = handed_waits()
         return ops.deploy_facts(SRV, SRV_OFFER, es, (ops.first_parents(RANGE_LOG), MERGED, None), NOTES, steps, ops.waited_on(steps, es, SRV))
 
-    def test_the_steps_it_waits_on_come_first_before_the_notes_a_box_each_and_one_for_the_deploy_none_ticked(self):
-        f = self.facts([SRV_OFFER, waiting(2)])
+    def test_once_every_step_it_waits_on_is_done_its_card_is_the_hold_to_approve_listing_them_first_done(self):
+        """rail-cards "The step done": the hold-to-approve of risk high, its face listing the step done, with no box."""
+        f = self.facts([SRV_OFFER, waiting(2), e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done")])
         assert [s["n"] for s in f["steps"]] == ["2"]
         out = cards.deploy_card(f)
         c = out["card"]
-        assert c["summary"].startswith(
-            "It waits on 1 step of yours before the deploy: tick each once it is done, and the deploy; your send with every box "
-            "ticked is the word to deploy, and a box left unticked deploys nothing. 2 landings since")
-        assert [a["title"] for a in c["artifacts"]] == ["Before the deploy: 1 step, yours", "What's in it: swancloud-srv-v0.3.0",
+        assert c["summary"].startswith("It waited on 1 step of yours, each done. 2 landings since")
+        assert (c["kind"], c["intent"], c["approve"]["risk"], c["recommendedIds"]) == ("approve", "approve", "high", ["approve"])
+        assert "highStakes" not in c and "options" not in c and "multi" not in c and "form" not in out
+        assert [a["title"] for a in c["artifacts"]] == ["Before the deploy: 1 step, yours, done", "What's in it: swancloud-srv-v0.3.0",
                                                         "After the deploy: 1 step, 1 yours"]
-        assert c["artifacts"][0]["lines"][:2] == ["1 Move the Archives disk from", "  mac-studio to deneb."]
-        assert (c["kind"], c["intent"], c["highStakes"], c["recommendedIds"], c["multi"]) == ("multi", "decide", True, [], {"min": 0, "max": 2})
-        assert [(o["id"], o["label"]) for o in c["options"]] == [("before:1", f"Done: 1. {MOVE}"), ("deploy", "Deploy bbbbbbb to swancloud-srv")]
-        assert "approve" not in c and c["rationale"] == "swancloud-srv deploys only on your word, and a deploy is not undone."
-        assert out["form"] == "boxes" == cards.deploy_form(f) and out["head"] == S2
+        assert c["artifacts"][0]["lines"] == ["1 Move the Archives disk from", "  mac-studio to deneb.", "   done"]
+        assert out["head"] == S2 and c["rationale"] == "swancloud-srv deploys only on your word, and a deploy is not undone."
 
-    def test_once_every_step_it_waits_on_is_done_its_card_is_the_hold_to_approve_listing_them_done(self):
-        f = self.facts([SRV_OFFER, waiting(2), e("ops.step", env=SRV, minutes=3, Head=S2, Key=DISK, State="done")])
-        out = cards.deploy_card(f)
-        c = out["card"]
-        assert c["summary"].startswith("It waits on 1 step of yours before the deploy, each done. 2 landings since")
-        assert (c["kind"], c["approve"]["risk"], "highStakes" in c) == ("approve", "high", False)
-        assert c["artifacts"][0]["lines"][-1] == "   done" and out.get("form") is None and cards.deploy_form(f) is None
-        assert cards.deploy_card(dict(f, waited=[]))["card"]["summary"].startswith("2 landings since")
-
-    def waits_on(self, k, done=()):
+    def test_a_deploy_that_waited_on_no_step_says_none_and_its_builder_makes_no_boxes_whatever_its_steps(self):
         f = self.facts([SRV_OFFER])
-        f["waited"] = [dict(n=str(i), text=f"step {i}", why=None, to=None, key=None, state="done" if i in done else None)
-                       for i in range(1, k + 1)]
-        return f
+        assert cards.deploy_card(dict(f, waited=[]))["card"]["summary"].startswith("2 landings since")
+        assert cards.deploy_card(f)["card"]["kind"] == "approve" and not hasattr(cards, "deploy_boxes") and not hasattr(cards, "deploy_form")
 
-    def test_seven_steps_it_waits_on_are_one_list_of_five_boxes_the_fourth_holding_the_rest(self):
-        """rail-cards "Seven steps share four boxes": Pending You refuses a card of questions carrying highStakes, so the
-        card stays one list held to send, its fourth box holding steps 4 to 7."""
-        out = cards.deploy_card(self.waits_on(7))
-        c = out["card"]
-        assert (c["kind"], c["highStakes"], bool(c["rationale"])) == ("multi", True, True)
-        assert "questions" not in c and "about" not in c and c["multi"] == {"min": 0, "max": 5}
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:2", "before:3", "before:4-5-6-7", "deploy"]
-        fourth = c["options"][3]
-        assert fourth["label"] == "Done: steps 4, 5, 6 and 7" and fourth["detail"].startswith("4. step 4; 5. step 5")
-        assert fourth["consequence"] == "Ticked: you have done each of them, and each is recorded done with your word."
-        assert c["artifacts"][0]["title"] == "Before the deploy: 7 steps, yours"
-        assert [l for l in c["artifacts"][0]["lines"] if not l.startswith(" ")] == [f"{i}  step {i}" for i in range(1, 8)]
-        assert c["summary"].startswith(
-            "It waits on 7 steps of yours before the deploy: tick each box once its steps are done, steps 4, 5, 6 and 7 "
-            "sharing the fourth, and the deploy; your send with every box ticked is the word to deploy, and a box left "
-            "unticked deploys nothing.")
-        assert out["form"] == "boxes"
-
-    def test_four_steps_it_waits_on_have_a_box_each(self):
-        """rail-cards "Four steps the deploy waits on"."""
-        c = cards.deploy_card(self.waits_on(4))["card"]
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:2", "before:3", "before:4", "deploy"]
-        assert (c["kind"], c["highStakes"], "questions" in c) == ("multi", True, False)
-        assert c["summary"].startswith(
-            "It waits on 4 steps of yours before the deploy: tick each once it is done, and the deploy; your send with every "
-            "box ticked is the word to deploy, and a box left unticked deploys nothing.")
-
-    def test_a_step_done_among_six_leaves_the_fourth_box_holding_the_last_two(self):
-        """rail-cards "A step done among six"."""
-        c = cards.deploy_card(self.waits_on(6, done={2}))["card"]
-        assert [o["id"] for o in c["options"]] == ["before:1", "before:3", "before:4", "before:5-6", "deploy"]
-        assert c["options"][3]["label"] == "Done: steps 5 and 6"
-        assert c["artifacts"][0]["lines"][1:3] == ["2  step 2", "   done"]
-        assert c["summary"].startswith("It waits on 6 steps of yours before the deploy, 1 done: tick each box once its steps "
-                                       "are done, steps 5 and 6 sharing the fourth, and the deploy;")
-
-    def test_the_form_each_post_or_change_took_is_kept_and_read_back(self):
+    def test_a_card_posted_as_boxes_before_is_read_by_its_form_and_no_post_records_one_now(self):
         import plan
-        assert plan.built_fields({"form": "boxes"}) == {"Form": "boxes"} and plan.built_fields({}) == {}
+        assert plan.built_fields(cards.deploy_card(self.facts([SRV_OFFER]))) == {}
         posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", Form="boxes")]
         assert cards.form_asked(posted, "req_1") == "boxes" and cards.form_asked(posted, "req_2") is None
         assert cards.form_asked(posted + [dict(Act="card.update", Card="req_1", Refused="no")], "req_1") == "boxes"
         assert cards.form_asked(posted + [dict(Act="card.update", Card="req_1")], "req_1") is None
 
-    @pytest.fixture
-    def raised(self, monkeypatch, tmp_path):
-        import plan
-        got = []
-
-        def change(fleet, label, owner, build, facts, note, where, acts=None, kind_changed=False, anew=None, since=None):
-            c = build(facts)["card"]
-            got.append((kind_changed, c.get("kind"), [o["id"] for o in c.get("options") or []]))
-            return "req_1"
-        monkeypatch.setattr(plan, "row_card_change", change)
-        monkeypatch.setattr(ops, "ops_where", lambda fleet, label: ("/b/main", "github.com/o/b"))
-        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
-        monkeypatch.setattr(ops, "kit_range", lambda fleet, label, frm, to: (None, None, "not read"))
-        monkeypatch.setattr(ops.record, "gather", lambda fleet, labels, since: ([], {}))
-        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: [SRV_OFFER, waiting(2)])
-        (tmp_path / "steps.txt").write_text(WAITS)
-        return got
-
-    def test_a_held_card_that_moves_between_the_hold_to_approve_and_boxes_is_followed_and_one_that_stays_is_changed(self, raised):
-        class Acts:
-            def __init__(self, form=None):
-                self.posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops", Head=S2,
-                                    **({"Form": form} if form else {}))]
-
-            def entries(self, label):
-                return self.posted
-        row = {"label": "swancloud", "key": f"deploy/{SRV}"}
-        assert ops.raise_deploy(FLEET, row, Acts(), note="Offered again: its after-deploy steps changed") == "req_1"
-        assert ops.raise_deploy(FLEET, row, Acts("boxes"), note="Offered again: its after-deploy steps changed") == "req_1"
-        assert [(moved, kind) for moved, kind, _ in raised] == [(True, "multi"), (False, "multi")]
-
-    def test_a_step_done_while_a_shared_box_waits_changes_the_card_in_place(self, raised, monkeypatch):
-        """rail-cards "A step recorded done while the card of a shared box waits": the card stays one list, so it is
-        changed in place with its boxes regrouped, never followed."""
-        words = [f"Do step {i} of the move." for i in range(1, 8)]
-        keys = [f"{i}" * 12 for i in range(1, 8)]
-        es = ([SRV_OFFER] + [waiting(1 + i, text=t, key=k) for i, (t, k) in enumerate(zip(words, keys), 1)]
-              + [e("ops.step", env=SRV, minutes=9, Head=S2, Key=keys[4], State="done")])
-        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: es)
-        (ops.kept("swancloud", SRV, S2) / "steps.txt").write_text(
-            "".join(f"step\t{i}\tuser\tbefore\t{SRV}\tWhy step {i}.\t{t}\n" for i, t in enumerate(words, 1)))
-
-        class Acts:
-            posted = [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops", Head=S2, Form="boxes")]
-
-            def entries(self, label):
-                return self.posted
-        row = {"label": "swancloud", "key": f"deploy/{SRV}"}
-        assert ops.raise_deploy(FLEET, row, Acts(), note="A step it waits on is recorded done") == "req_1"
-        assert raised == [(False, "multi", ["before:1", "before:2", "before:3", "before:4-6-7", "deploy"])]
-
 
 class TestAStepRecordedThatTheOfferWaitsOn:
     """crew ops step, its acts stood in for: the deployer's record of a step the open offer waits on is marked before,
-    and one recorded done while the deploy's card is open raises that card again."""
+    a card the deploy left unanswered withdrawn, and the step's done, the last the deploy waits on, raises its card."""
 
     @pytest.fixture
     def stepped(self, monkeypatch, tmp_path):
-        import plan
         got = {"emitted": [], "raised": []}
         es = [SRV_OFFER]
         monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: es)
         monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path)
-        monkeypatch.setattr(ops, "emit", lambda label, act, env, why, refused=None, **f: got["emitted"].append(f))
-        monkeypatch.setattr(ops, "step_closed", lambda *a: False)
+
+        def emit(label, act, env, why, refused=None, **f):
+            got["emitted"].append(f)
+            es.append(e(act, env=env, minutes=30, **{k: v for k, v in f.items() if v is not None}))
+        monkeypatch.setattr(ops, "emit", emit)
         monkeypatch.setattr(ops, "raise_next_step", lambda *a: None)
         monkeypatch.setattr(ops, "raise_deploy", lambda fleet, row, acts=None, note=None: got["raised"].append((row["key"], note)))
+        (tmp_path / "steps.txt").write_text(WAITS)
+        got["es"] = es
+        return got
+
+    def run(self, *argv, text=None, key=DISK):
+        a = ops.parser().parse_args(["step", SRV, "--label", "swancloud", "--to", S2, "--key", key, *argv])
+        a.step_text = text
+        ops.step(FLEET, a)
+
+    def test_the_deployers_record_of_a_step_the_offer_waits_on_is_marked_before_and_the_deploys_card_withdrawn(self, stepped, capsys):
+        self.run("--state", "waiting", "--doer", "user", text="Move the Archives disk\nfrom mac-studio to deneb.\n")
+        assert stepped["emitted"][-1]["When"] == "before" and stepped["raised"] == [(f"deploy/{SRV}", None)]
+        assert f"the deploy of {SRV} offered waits on it, so the deploy's card is raised once the step is done" in capsys.readouterr().out
+        self.run("--state", "waiting", "--doer", "user", text="rotate the kanidm admin password", key="rotate")
+        assert stepped["emitted"][-1]["When"] == "" and len(stepped["raised"]) == 1
+
+    def test_the_last_step_it_waits_on_recorded_done_raises_the_deploys_card(self, stepped):
+        stepped["es"].append(waiting(2))
+        self.run("--state", "done")
+        assert stepped["raised"] == [(f"deploy/{SRV}", None)]
+
+    def test_a_step_done_while_another_it_waits_on_is_open_raises_nothing(self, stepped, tmp_path):
+        (tmp_path / "steps.txt").write_text(WAITS + f"step\t3\tuser\tbefore\t{SRV}\t\tPlug the disk in.\n")
+        stepped["es"] += [waiting(2), waiting(3, text="Plug the disk in.", key="plug")]
+        self.run("--state", "done")
+        assert stepped["raised"] == []
+
+
+# ------------------------------------------- one step of the user's, however many hosts wait on it (record 0070)
+CHA = "chuck-herdr-alpha"
+DISK_WHY = "The job points at deneb, which holds no repository until the disk is there."
+DISK_TEXT = f"{MOVE}\n- why: {DISK_WHY}"
+CUTOVER_OFFER = e("ops.offer", env=CHA, minutes=1, Head=S2, Base=S1)
+
+
+def done_before(env, k):
+    """k steps of env's, each done, so the next step env records is its k+1th."""
+    return [e("ops.step", env=env, Key=f"old-{env}-{i}", State="done", Doer="user") for i in range(k)]
+
+
+def disk(env, minutes, key=DISK, **f):
+    """The deployer's record of the Archives disk's step on env, as swancloud's record_waited makes it."""
+    return e("ops.step", env=env, minutes=minutes, Head=S2 if env == CHA else S1, Key=key, State="waiting",
+             **dict(dict(Doer="user", Text=DISK_TEXT), **f))
+
+
+# Before swancloud's Willdan cutover: one step of the user's on four hosts, chuck-herdr-alpha's under its open offer.
+CUTOVER = (done_before("mac-studio", 6) + done_before("macbook-pro", 7) + done_before("deneb", 41)
+           + [CUTOVER_OFFER, disk("mac-studio", 2), disk("macbook-pro", 3), disk("deneb", 4), disk(CHA, 5, When="before")])
+CUTOVER_HEADS = f"mac-studio@{S1} macbook-pro@{S1} deneb@{S1} {CHA}@{S2}"
+
+
+def heads_of(g):
+    return [(n, k[0]) for n, k, _ in g["steps"]]
+
+
+class TestOneStepManyHosts:
+    def test_the_cutovers_step_on_four_hosts_is_one_group_in_first_recorded_order(self):
+        g, = ops.groups(CUTOVER)
+        assert (g["key"], g["shared"]) == (DISK, True)
+        assert heads_of(g) == [(7, "mac-studio"), (8, "macbook-pro"), (42, "deneb"), (1, CHA)]
+
+    def test_a_held_step_on_two_hosts_is_two_groups_and_a_gate_is_one_of_its_own(self):
+        held = [e("ops.step", env=x, minutes=i, Key="restart-teams", State="waiting", Doer="main-ops", When="held",
+                  Text="Restart crew's teams.") for i, x in enumerate(("mac-studio", "deneb"))]
+        assert [(g["shared"], heads_of(g)) for g in ops.groups(held)] == [(False, [(1, "mac-studio")]), (False, [(1, "deneb")])]
+        assert [(g["shared"], heads_of(g)) for g in ops.groups([gate()])] == [(False, [(1, "dev")])]
+
+    def test_a_step_done_on_one_host_leaves_its_group_and_two_keys_are_two_groups(self):
+        g, = ops.groups(CUTOVER + [e("ops.step", env="deneb", minutes=6, Head=S1, Key=DISK, State="done", Doer="user")])
+        assert [x for _, x in heads_of(g)] == ["mac-studio", "macbook-pro", CHA]
+        two = CUTOVER + [disk("deneb", 7, key="rotate-kanidm")]
+        assert [(g["key"], [x for _, x in heads_of(g)]) for g in ops.groups(two)] == [
+            (DISK, ["mac-studio", "macbook-pro", "deneb", CHA]), ("rotate-kanidm", ["deneb"])]
+
+    def test_the_group_has_one_row_keyed_by_its_first_recorded_step_answered_by_settle(self):
+        rows = ops.rows(None, "afterthought", CUTOVER)
+        assert [r["key"] for r in rows] == [f"deploy/{CHA}", "op/mac-studio/7"]
+        row = rows[1]
+        assert row["cmds"] == [("done", "crew ops settle op/mac-studio/7 --state done --label afterthought"),
+                               ("decline", "crew ops settle op/mac-studio/7 --state declined --label afterthought")]
+        assert row["heads"] == CUTOVER_HEADS.split() and row["step"] == DISK
+        assert row["what"] == [f"an operation on mac-studio, macbook-pro, deneb and {CHA} (afterthought), yours to do, one answer "
+                               f"settling it on each: {DISK_TEXT}"]
+
+    def test_the_key_stays_with_the_open_card_once_the_first_hosts_step_is_done_on_its_own(self):
+        posted = [card("card.post", "op/mac-studio/7", "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS)]
+        done = CUTOVER + [e("ops.step", env="mac-studio", minutes=7, Head=S1, Key=DISK, State="done", Doer="user")]
+        assert [r["key"] for r in ops.rows(None, "afterthought", done, posted)][1:] == ["op/mac-studio/7"]
+        assert [r["key"] for r in ops.rows(None, "afterthought", done)][1:] == ["op/macbook-pro/8"]
+        assert ops.card_steps(done, posted, "op/mac-studio/7", "req_7") == {
+            ("mac-studio", S1, DISK), ("macbook-pro", S1, DISK), ("deneb", S1, DISK), (CHA, S2, DISK)}
+
+    def test_a_card_from_before_recording_no_heads_names_its_keys_environment_alone(self):
+        old = [card("card.post", "op/deneb/42", "req_42", 6, By="afterthought-ops")]
+        assert ops.card_steps(CUTOVER, old, "op/deneb/42", "req_42") == {("deneb", S1, DISK)}
+        g, = ops.groups(CUTOVER)
+        assert ops.group_key(g, ops.step_cards(CUTOVER, old)) == "op/deneb/42"
+        three = old + [card("card.post", "op/macbook-pro/8", "req_8", 7, By="afterthought-ops"),
+                       card("card.post", "op/mac-studio/7", "req_7", 8, By="afterthought-ops")]
+        assert ops.group_key(g, ops.step_cards(CUTOVER, three)) == "op/mac-studio/7"
+
+
+class TestSettle:
+    """crew ops settle, its acts stood in for: the user's answer on a step's card recorded on every step it named, each
+    under its own environment, deploy and key, the card closed once, and what the step released raised (Decision 6)."""
+    KEY = "op/mac-studio/7"
+    HANDED = f"step\t1\tuser\tbefore\t{CHA}\t{DISK_WHY}\t{MOVE}\n"
+
+    @pytest.fixture
+    def settled(self, monkeypatch, tmp_path):
+        import plan
+        got = {"emitted": [], "closed": [], "next": [], "raised": [], "cards": []}
+        es = list(CUTOVER)
+        monkeypatch.setattr(ops, "entries", lambda label, days=ops.DAYS: es)
+        monkeypatch.setattr(ops, "kept", lambda label, env, to: tmp_path / env)
+        (tmp_path / CHA).mkdir()
+        (tmp_path / CHA / "steps.txt").write_text(self.HANDED)
+
+        def emit(label, act, env, why, refused=None, **f):
+            got["emitted"].append(dict(f, env=env))
+            es.append(e(act, env=env, minutes=30, **{k: v for k, v in f.items() if v is not None}))
+        monkeypatch.setattr(ops, "emit", emit)
+        monkeypatch.setattr(plan, "row_card_close", lambda fleet, label, owner, key, outcome=None, reason=None, acts=None, **k:
+                            got["closed"].append((owner, key, outcome)))
+        monkeypatch.setattr(ops, "raise_next_step", lambda fleet, label, env, k=None: got["next"].append(env))
+        monkeypatch.setattr(ops, "raise_deploy", lambda fleet, row, acts=None, note=None: got["raised"].append(row["key"]))
 
         class Acts:
             def __init__(self, fleet):
                 pass
 
             def entries(self, label):
-                return [dict(Act="card.post", Card="req_1", Key=f"deploy/{SRV}", By="swancloud-ops")]
+                return got["cards"]
         monkeypatch.setattr(plan, "CardActs", Acts)
-        (tmp_path / "steps.txt").write_text(WAITS)
-        got["es"] = es
         return got
 
-    def run(self, *argv, text=None):
-        a = ops.parser().parse_args(["step", SRV, "--label", "swancloud", "--to", S2, "--key", DISK, *argv])
-        a.step_text = text
-        ops.step(FLEET, a)
+    def run(self, key, state):
+        a = ops.parser().parse_args(["settle", key, "--label", "afterthought", "--state", state])
+        ops.settle(FLEET, a)
 
-    def test_the_deployers_record_of_a_step_the_offer_waits_on_is_marked_before(self, stepped, capsys):
-        self.run("--state", "waiting", "--doer", "user", text="Move the Archives disk\nfrom mac-studio to deneb.\n")
-        assert stepped["emitted"][-1]["When"] == "before"
-        assert f"the deploy of {SRV} offered waits on it, so it is ticked on deploy/{SRV}'s card" in capsys.readouterr().out
-        self.run("--state", "waiting", "--doer", "user", text="rotate the kanidm admin password")
-        assert stepped["emitted"][-1]["When"] == "" and stepped["raised"] == []
+    def posted(self, settled):
+        settled["cards"].append(card("card.post", self.KEY, "req_7", 6, By="afterthought-ops", Heads=CUTOVER_HEADS))
 
-    def test_a_step_it_waits_on_recorded_done_while_its_card_is_open_raises_that_card_again(self, stepped):
-        stepped["es"].append(waiting(2))
-        self.run("--state", "done")
-        assert stepped["raised"] == [(f"deploy/{SRV}", "A step it waits on is recorded done")]
+    def test_done_is_recorded_on_each_of_the_four_under_its_own_deploy_and_key_the_card_closed_once_and_the_deploy_raised(self, settled):
+        self.posted(settled)
+        self.run(self.KEY, "done")
+        assert [(x["env"], x["Head"], x["Key"], x["State"], x["Doer"], x["When"], x["Note"]) for x in settled["emitted"]] == [
+            ("mac-studio", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            ("macbook-pro", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            ("deneb", S1, DISK, "done", "user", "", f"answered on {self.KEY}"),
+            (CHA, S2, DISK, "done", "user", "before", f"answered on {self.KEY}")]
+        assert settled["closed"] == [("afterthought-ops", self.KEY, "Done.")]
+        assert settled["next"] == ["mac-studio", "macbook-pro", "deneb", CHA] and settled["raised"] == [f"deploy/{CHA}"]
+        assert ops.state(ops.entries("afterthought"))[2][("deneb", S1, DISK)]["State"] == "done"
+
+    def test_declined_is_recorded_on_each_the_card_closes_skipped_and_no_deploy_is_raised(self, settled):
+        self.posted(settled)
+        self.run(self.KEY, "declined")
+        assert [x["State"] for x in settled["emitted"]] == ["declined"] * 4
+        assert settled["closed"] == [("afterthought-ops", self.KEY, "Skipped.")] and settled["raised"] == []
+
+    def test_a_key_no_row_or_card_holds_is_refused_and_nothing_is_recorded(self, settled):
+        with pytest.raises(ops.Refusal, match="no step's row or card holds op/deneb/99"):
+            self.run("op/deneb/99", "done")
+        assert settled["emitted"] == [] and settled["closed"] == []
+
+    def test_a_card_with_no_post_settles_the_rows_steps(self, settled):
+        self.run(self.KEY, "done")
+        assert [x["env"] for x in settled["emitted"]] == ["mac-studio", "macbook-pro", "deneb", CHA]
+        assert settled["closed"] == [] and settled["raised"] == [f"deploy/{CHA}"]
+
+    def test_only_the_steps_the_card_named_are_settled_a_host_recorded_since_waiting_for_its_own_card(self, settled):
+        settled["cards"].append(card("card.post", self.KEY, "req_7", 6, By="afterthought-ops", Heads=f"mac-studio@{S1} deneb@{S1}"))
+        self.run(self.KEY, "done")
+        assert [x["env"] for x in settled["emitted"]] == ["mac-studio", "deneb"] and settled["raised"] == []
+
+    def test_a_key_not_a_step_cards_is_refused_by_its_arguments(self):
+        a = ops.parser().parse_args(["settle", "deploy/deneb", "--label", "wldn", "--state", "done"])
+        assert ops.args_refusal(FLEET, a) == "deploy/deneb is no step card's key: op/<env>/<n>, as the rail shows it"

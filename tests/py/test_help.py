@@ -63,6 +63,7 @@ class TestAsked:
         assert asked(record.parser(), ["events", "--label", "wldn", "--help"]) == "crew events"
         assert asked(hold.parser(), ["_hold", "set", "--help"]) == "crew _hold set"
         assert asked(ops.parser(), ["offer", "dev", "-h"]) == "crew ops offer"
+        assert asked(ops.parser(), ["settle", "op/mac-studio/7", "-h"]) == "crew ops settle"
 
 
 class TestAnswered:

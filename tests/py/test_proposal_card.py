@@ -3,12 +3,13 @@ on the plan at the tip and the plan its commands leave, with its picture. The lo
 it here proves crew needs nothing installed to draw it. The rail's sweep raises it again only on the plan as it stands
 (plan.raise_proposal, chain_closed). Raising the card is the proposals journey's (t-journey-plan)."""
 import json
+import re
 import struct
 import zlib
 
 import pytest
 
-from facts import FLEET, STANDING, FactsWrite, apply, keeping, known, plan_text
+from facts import FLEET, STANDING, FactsWrite, apply, based, keeping, known, plan_text
 
 import cards
 import plan
@@ -44,10 +45,12 @@ def adds(prefix, k):
     return [f'unit add {prefix}-{i} "Unit {i}." --repo switchboard-kit' for i in range(1, k + 1)]
 
 
-def built(n, case, *dos, session=None, state="open"):
+def built(n, case, *dos, session=None, state="open", applied=None):
+    """The card of a proposal of dos on fresh's plan, the plan it leaves built from applied, dos unless given: a start
+    asks a runner the fixture has not."""
     argvs = [plan.do_args("wldn", d) for d in dos]
-    return cards.proposal_card(dict(n=n, state=state, case=case, before=fresh().plan, after=apply(fresh(), *dos).plan,
-                                    argvs=argvs, session=session))
+    return cards.proposal_card(dict(n=n, state=state, case=case, before=fresh().plan,
+                                    after=apply(fresh(), *(dos if applied is None else applied)).plan, argvs=argvs, session=session))
 
 
 DOS = ('unit drop c-third "Not needed now."', 'unit amend b-second "The second thing, done better."',
@@ -66,14 +69,15 @@ class TestBuiltDropAmendAdd:
         c = self.B["card"]
         assert self.B["key"] == "proposal/1"
         assert c["title"] == "Plan change to deploys: 1 dropped, 1 amended, 2 new"
-        assert c["summary"] == ("The third unit is not needed. Each new unit below is ticked; clear any to leave it out, and send. "
+        assert c["summary"] == ("The third unit is not needed. Each new unit below goes ahead as proposed unless you leave it out. "
                                 "What it drops or amends applies with it.")
         assert c["context"]["background"] == "The third unit is not needed. The second needs more. Two units finish the bolt."
 
     def test_it_is_one_checkbox_list_of_its_new_units_ticked_with_no_box_for_the_drop_or_the_amendment(self):
         c = self.B["card"]
         assert (c["kind"], c["intent"]) == ("multi", "decide") and "approve" not in c and "questions" not in c
-        assert [(o["id"], o["label"]) for o in c["options"]] == [("add:e-fifth", "Add e-fifth"), (f"add:{LONG}", f"Add {LONG}")]
+        assert [(o["id"], o["label"]) for o in c["options"]] == [("add:e-fifth", "Add e-fifth for later"),
+                                                                     (f"add:{LONG}", f"Add {LONG} for later")]
         assert c["recommendedIds"] == ["add:e-fifth", f"add:{LONG}"] and c["multi"] == {"min": 0, "max": 2}
         assert c["options"][0]["detail"] == "The fifth thing is built."
         assert [(b["unit"], b["is"], b["ticked"]) for b in self.B["boxes"]] == [("e-fifth", "new", True), (LONG, "new", True)]
@@ -112,7 +116,7 @@ def test_a_proposal_with_no_new_unit_is_a_hold_to_approve_of_low_risk():
     assert (c["kind"], c["approve"], c["recommendedIds"]) == ("approve", {"action": "Apply the plan change to deploys", "risk": "low",
                                                                          "reversible": True}, ["approve"])
     assert [a["kind"] for a in c["artifacts"]] == ["image", "code"]
-    assert c["summary"] == "The last goes first. Hold to apply it whole."
+    assert c["summary"] == "The last goes first. Approved, all of it applies."
 
 
 def test_a_proposal_of_drops_alone_is_a_hold_to_approve_declined_with_a_note_to_keep_one():
@@ -122,8 +126,8 @@ def test_a_proposal_of_drops_alone_is_a_hold_to_approve_declined_with_a_note_to_
     assert c["title"] == "Plan change to deploys: 3 dropped"
     assert (c["kind"], c["intent"], c["approve"]["risk"], c["approve"]["reversible"]) == ("approve", "approve", "low", True)
     assert "options" not in c and "questions" not in c and b["boxes"] == []
-    assert c["summary"] == ("Three units are not needed. Hold to apply it whole; to keep a unit it drops or amends, "
-                            "decline with a note.")
+    assert c["summary"] == ("Three units are not needed. Approved, all of it applies. Declined, none of it does, and your note "
+                            "tells the planner what to keep.")
     md = c["artifacts"][0]
     assert md["title"] == "The dropped units"
     text = "\n".join(md["lines"])
@@ -164,7 +168,7 @@ def test_a_rename_is_a_block_naming_both_names_and_no_bolt(monkeypatch):
     c = b["card"]
     assert (c["kind"], c["approve"]["risk"], b["boxes"]) == ("approve", "low", []) and "options" not in c
     assert c["title"] == "Plan change to flywheel-cloud and tailrace"
-    assert c["summary"] == "Two repositories were renamed on their forge. Hold to apply it whole."
+    assert c["summary"] == "Two repositories were renamed on their forge. Approved, all of it applies."
     assert [a["kind"] for a in c["artifacts"]] == ["image", "code"]
     assert c["artifacts"][-1]["lines"] == [
         "RENAME KIT", "       flywheel-cloud → boomdrive-cloud", "       its work is finished; its", "       launches, landings and record",
@@ -191,14 +195,33 @@ def test_a_lone_row_is_the_choice_of_its_two_sides_since_a_list_holds_two_at_lea
     c = b["card"]
     assert c["title"] == "Plan change to the switchboard-kit queue: 1 new"
     assert (c["kind"], [o["id"] for o in c["options"]], c["recommendedIds"]) == ("choice", ["add:g-one", "unticked"], ["add:g-one"])
-    assert c["options"][1]["label"] == "Leave g-one out"
-    assert c["summary"] == "One more unit, queued. Its one new unit is set as proposed; pick the other side and send to leave it out."
+    assert [(o["label"], o.get("consequence")) for o in c["options"]] == [
+        ("Queue g-one for later", "It waits in the switchboard-kit queue until a bolt takes it."),
+        ("Leave g-one out", "It is not added to the plan.")]
+    assert c["summary"] == "One more unit, queued."
     dropped = built(5, "x.", 'unit drop c-third "Not needed now."')["card"]
     assert (dropped["kind"], "options" not in dropped) == ("approve", True)
-    assert dropped["summary"].endswith("decline with a note.")
+    assert dropped["summary"].endswith("Declined, none of it does, and your note tells the planner what to keep.")
     beside = built(5, "x.", 'unit drop c-third "Not needed now."', 'unit add g-one "One unit." --bolt deploys')["card"]
     assert ([o["id"] for o in beside["options"]], beside["recommendedIds"]) == (["add:g-one", "unticked"], ["add:g-one"])
-    assert beside["summary"].endswith("send to leave it out. What it drops or amends applies with it.")
+    assert beside["summary"] == "x. What it drops or amends applies with it."
+
+
+def test_a_lone_unit_moved_into_a_bolt_the_proposal_starts_starts_now_or_stays_queued():
+    """plan-proposals "Into a bolt the proposal starts" and "A lone unit moved from a queue", in proposal 73's shape: a
+    new bolt, a queued unit moved into it, and the bolt started. The plan it leaves is built without the start, which
+    asks a runner the fixture has not; starts is read from the commands."""
+    def queued():
+        return FactsWrite(plan_text(bolts=[("deploys", KIT, None)], units=[("a-first", KIT, "deploys", []), ("q-one", KIT, None, [])]))
+    dos = ('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move q-one y", "bolt start y")
+    b = cards.proposal_card(dict(n=73, state="open", case="The queued unit starts now in a bolt of its own.", before=queued().plan,
+                                 after=apply(queued(), *dos[:2]).plan, argvs=[plan.do_args("wldn", d) for d in dos], session=None))
+    c = b["card"]
+    assert (c["kind"], [o["id"] for o in c["options"]], c["recommendedIds"]) == ("choice", ["add:q-one", "unticked"], ["add:q-one"])
+    assert [(o["label"], o["consequence"]) for o in c["options"]] == [
+        ("Start q-one now", "It moves into bolt y, which this change starts, and is built now."),
+        ("Leave q-one out for now", "It stays in the switchboard-kit queue.")]
+    assert c["summary"] == "The queued unit starts now in a bolt of its own."
 
 
 def test_seven_new_units_are_two_lists_of_four_and_three_on_one_card():
@@ -213,6 +236,7 @@ def test_sixteen_new_units_are_a_hold_to_approve_that_links_its_reading_session_
     b = built(7, "Sixteen units for the queue.", *adds("x", 16), session="http://mac-studio:19500")
     c = b["card"]
     assert (c["kind"], b["session"]) == ("approve", True)
+    assert c["approve"]["action"] == "Apply the plan change to the switchboard-kit queue"
     assert c["summary"].startswith("Read it all in one session: http://mac-studio:19500\n\nSixteen units for the queue.")
     assert c["context"]["links"] == [{"label": "Read proposal 7", "url": "http://mac-studio:19500"}]
 
@@ -286,10 +310,91 @@ def test_a_proposals_card_form_is_read_from_its_commands_alone_as_its_card_is_bu
 
 
 def test_a_move_into_a_bolt_is_a_box_to_move_it_in():
-    c = built(8, "The moving page belongs with the deploys.", "unit move m-move deploys")["card"]
-    assert c["title"] == "Plan change to pages and deploys: 1 new, 1 moved"
-    assert c["options"][0]["label"] == "Move m-move in"
-    assert c["options"][0]["consequence"] == "Cleared: stays in bolt pages; the rest still applies"
+    """A move beside an add, so a list: its box moves it in for later, deploys not started, and left out it stays where
+    it stood."""
+    c = built(8, "The moving page belongs with the deploys.", "unit move m-move deploys",
+              'unit add e-fifth "The fifth thing is built." --bolt deploys')["card"]
+    assert (c["kind"], c["title"]) == ("multi", "Plan change to pages and deploys: 2 new, 1 moved")
+    assert c["options"][0]["label"] == "Move m-move in for later"
+    assert c["options"][0]["consequence"] == ("It moves into bolt deploys, which has not started, and is built once deploys "
+                                              "starts. Left out, it stays in bolt pages.")
+
+
+def test_a_list_box_says_both_outcomes(monkeypatch):
+    """plan-proposals "Both outcomes in a list": an add to a started bolt, its base place launched as its start leaves
+    it (based), and a move from bolt pages into it."""
+    monkeypatch.setenv("CREW_AGENT", "chuck@mac-studio")
+
+    def started():
+        return FactsWrite(plan_text(bolts=[("deploys", KIT, True), ("pages", KIT, None)],
+                                    units=[("a-first", KIT, "deploys", []), ("m-move", KIT, "pages", [])]))
+    dos = ('unit add b-new "The new thing." --bolt deploys', "unit move m-move deploys")
+    c = cards.proposal_card(dict(n=12, state="open", case="Both join the running bolt.", before=started().plan,
+                                 after=apply(based(started()), *dos).plan, argvs=[plan.do_args("wldn", d) for d in dos], session=None))["card"]
+    assert [(o["label"], o["consequence"]) for o in c["options"]] == [
+        ("Start b-new now", "It joins bolt deploys, which is running, and is built now. Left out, it is not added to the plan."),
+        ("Start m-move now", "It moves into bolt deploys, which is running, and is built now. Left out, it stays in bolt pages.")]
+
+
+def test_a_box_too_long_keeps_its_left_out_whole():
+    """plan-proposals "Names too long for both": what happens kept is cut by whole words; "Left out," and what follows
+    it stay whole, the consequence within what Pending You takes."""
+    to, src = "a-bolt-" + "whose-name-runs-on-" * 4 + "to", "the-bolt-" + "it-stood-in-" * 5 + "first"
+
+    def long():
+        return FactsWrite(plan_text(bolts=[(to, KIT, None), (src, KIT, None)],
+                                    units=[("a-first", KIT, to, []), ("m-move", KIT, src, [])]))
+    dos = (f'unit add b-new "The new thing." --bolt {to}', f"unit move m-move {to}")
+    c = cards.proposal_card(dict(n=13, state="open", case="Long names.", before=long().plan, after=apply(long(), *dos).plan,
+                                 argvs=[plan.do_args("wldn", d) for d in dos], session=None))["card"]
+    moved = c["options"][1]["consequence"]
+    assert moved.endswith(f"… Left out, it stays in bolt {src}.") and len(moved) <= cards.DETAIL
+    assert all(len(o["consequence"]) <= cards.DETAIL for o in c["options"])
+
+
+class TestNewRowWords:
+    """plan-proposals "Each new unit's choice says what happens to it" and "Leaving a new unit out says where it stays":
+    cards.new_row_words on plain facts, no plan read."""
+
+    @staticmethod
+    def words(kind="add", unit="e", bolt="x", repo=KIT, came_from=None, running=False, starts=False, after=()):
+        return cards.new_row_words(kind, unit, bolt, repo, came_from, running, starts, after)
+
+    def test_into_a_started_bolt_it_starts_now(self):
+        w = self.words(running=True)
+        assert (w["go"], w["went"]) == ("Start e now", "It joins bolt x, which is running, and is built now.")
+        w = self.words(kind="move", unit="m", came_from="p", running=True)
+        assert (w["go"], w["went"]) == ("Start m now", "It moves into bolt x, which is running, and is built now.")
+
+    def test_into_a_bolt_the_proposal_starts_it_starts_now(self):
+        w = self.words(kind="move", unit="c", bolt="y", repo="flume", starts=True)
+        assert (w["go"], w["went"]) == ("Start c now", "It moves into bolt y, which this change starts, and is built now.")
+
+    def test_after_the_work_it_needs(self):
+        w = self.words(running=True, after=["a-first"])
+        assert (w["go"], w["went"]) == ("Start e after the work it needs",
+                                        "It joins bolt x, which is running, and is built once a-first has landed on it.")
+        w = self.words(running=True, after=["a-first", "b-second"])
+        assert w["went"] == "It joins bolt x, which is running, and is built once a-first and b-second have landed on it."
+
+    def test_into_a_bolt_not_started_it_is_for_later(self):
+        w = self.words(bolt="deploys")
+        assert (w["go"], w["went"]) == ("Add e for later", "It joins bolt deploys, which has not started, and is built once deploys starts.")
+        w = self.words(kind="move", unit="m", bolt="deploys", came_from="pages")
+        assert (w["go"], w["went"]) == ("Move m in for later",
+                                        "It moves into bolt deploys, which has not started, and is built once deploys starts.")
+
+    def test_into_a_queue_it_is_queued_for_later(self):
+        w = self.words(unit="g", bolt=None)
+        assert (w["go"], w["went"]) == ("Queue g for later", "It waits in the switchboard-kit queue until a bolt takes it.")
+
+    def test_left_out_says_where_it_stays(self):
+        w = self.words(unit="g", bolt=None)
+        assert (w["leave"], w["left"]) == ("Leave g out", "it is not added to the plan.")
+        w = self.words(kind="move", unit="c", bolt="y", repo="flume", starts=True)
+        assert (w["leave"], w["left"]) == ("Leave c out for now", "it stays in the flume queue.")
+        w = self.words(kind="move", unit="m", came_from="p", running=True)
+        assert (w["leave"], w["left"]) == ("Leave m out for now", "it stays in bolt p.")
 
 
 def test_a_closed_proposal_has_no_card_drawn_again():
@@ -441,17 +546,57 @@ class TestSweptOnThePlanAsItStands(OnTheTip):
         assert (got, self.fetched, [n for n, *_ in self.called]) == ("req_2", [False], ["row_card_change"])
 
 
+CONTROLS = re.compile(r"\b(pick|side|tick|ticked|clear|cleared|hold|send)\b", re.I)
+
+
+def crews_words(c, case):
+    """Every word crew itself writes on a proposal's card, where it was written: its title; its summary past the
+    case's first sentence and any line linking its reading session; each choice's label and consequence, on the card or
+    in its questions; its approval's action; each question's title. The case, the names and the intents are the
+    planner's."""
+    first = cards.SENTENCE.split(cards.prose(case, 10 ** 6))[0]
+    summary = c["summary"].split("\n\n")[-1]
+    assert summary.startswith(first)
+    out = [("title", c["title"]), ("summary", summary[len(first):])]
+    for q in [c] + c.get("questions", []):
+        out += [(f"{o['id']} {k}", o.get(k) or "") for o in q.get("options", []) for k in ("label", "consequence")]
+    out += [("action", c["approve"]["action"])] if "approve" in c else []
+    return out + [(f"{q['id']} title", q["title"]) for q in c.get("questions", [])]
+
+
+@pytest.mark.parametrize("dos, session, applied", [
+    (('unit drop c-third "Not needed now."', 'unit drop d-fourth "Done elsewhere."', 'unit amend b-second "Better."'), None, None),
+    (adds("x", 16), "http://mac-studio:19500", None),
+    (adds("g", 1), None, None),
+    (('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move m-move y", "bolt start y"), None,
+     ('bolt new y "Commands stop freezing." --repo switchboard-kit', "unit move m-move y")),
+    (('unit drop c-third "Not needed now."', "unit move m-move deploys", 'unit add e-fifth "The fifth." --bolt deploys',
+      "unit order d-fourth --first"), None, None),
+    (adds("s", 7), None, None),
+    (('bolt new console-pages "Console pages" --repo switchboard-kit --stays', 'unit add p-one "Pages." --bolt console-pages'),
+     None, None)],
+    ids=["approve-drops-amend", "sixteen-new", "lone-add", "lone-move-started", "one-list", "lists", "a-bolt-to-stay"])
+def test_no_word_of_crews_on_a_proposal_card_names_a_control(dos, session, applied):
+    """plan-proposals "A proposal's card names no control" (briefs.13, roles.3): none of crew's own words on a
+    proposal's card, in any form, tells the user how to work it."""
+    case = "The plan moves on. Its reasons follow."
+    c = built(14, case, *dos, session=session, applied=applied)["card"]
+    found = [(where, m.group(0)) for where, words in crews_words(c, case) for m in [CONTROLS.search(words)] if m]
+    assert not found, f"crew's words name a control: {found}"
+
+
 def test_a_bolt_planned_to_stay_says_it_waits_for_the_send():
     """plan-proposals "A bolt planned to stay" (record 0067): the card of a proposal whose bolt new holds --stays names
-    the bolt and says it stays unlanded until the user's send, on its face and in its text, so the user approves the
-    mark knowingly; a bolt start holding --stays is drawn so too, and a bolt planned without it says nothing of it."""
+    the bolt and says it stays unlanded until the user says to land it, on its face and in its text, so the user
+    approves the mark knowingly; a bolt start holding --stays is drawn so too, and a bolt planned without it says
+    nothing of it."""
     b = built(5, "The console's pages are a bolt of their own, kept open once done.",
               'bolt new console-pages "Console pages" --repo switchboard-kit --stays')
     c = b["card"]
-    assert c["summary"] == ("The console's pages are a bolt of their own, kept open once done. Hold to apply it whole. "
-                            "console-pages stays unlanded until your send of its landings card.")
-    assert "\n".join(c["artifacts"][-1]["lines"]).count("stays unlanded until your send") == 1
+    assert c["summary"] == ("The console's pages are a bolt of their own, kept open once done. Approved, all of it applies. "
+                            "console-pages stays unlanded until you say to land it.")
+    assert " ".join(" ".join(c["artifacts"][-1]["lines"]).split()).count("stays unlanded until you say to land it") == 1
     argvs = [plan.do_args("wldn", "bolt start pages --stays")]
-    assert "stays unlanded until your send" in "\n".join(cards.drawn(fresh().plan, fresh().plan, argvs)["lines"])
+    assert "stays unlanded until you say to land it" in " ".join(" ".join(cards.drawn(fresh().plan, fresh().plan, argvs)["lines"]).split())
     plain = built(6, "Pages.", 'bolt new console-pages "Console pages" --repo switchboard-kit')["card"]
     assert "unlanded" not in plain["summary"] and "unlanded" not in "\n".join(plain["artifacts"][-1]["lines"])

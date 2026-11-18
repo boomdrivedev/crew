@@ -36,7 +36,8 @@ for gone in "unit run a code" "unit wait a" "chore free c"; do expect_fail "inva
 expect_fail "crew: each drive's plan of bolts, its main level of agents in herdr" crew needs "what it needs"
 ok "the usage names none of the removed commands or roles, a team command among them, crew drives no stage and waits on none, crew send names a drive alone and runs on the sender's host and never over ssh, its entry pushed from the sending host, and it names crew review"
 
-has "$usage" "crew ops offer <env>"; has "$usage" "[--notes <file>] [--steps <file>]"; has "$usage" "[--ticked <n>[,<n>...]]"
+has "$usage" "crew ops offer <env>"; has "$usage" "[--notes <file>] [--steps <file>]"; lacks "$usage" "--ticked"
+has "$usage" "crew ops settle <op/env/n> --label L --state done|declined"
 for gone in "crew plan card" "crew card post" "crew card change" "crew card close" "post|change" "propose|proposed|agree|card"; do
   lacks "$usage" "$gone"
 done
@@ -47,7 +48,7 @@ has "$usage" "what an earlier send still lands, with or without a card open"
 has "$usage" "preview <key> <thing> [--done]"
 expect_fail "invalid choice: 'post'" crew card post land/x
 expect_fail "invalid choice: 'card'" crew plan card 1
-ok "the usage gives crew ops offer's notes and steps and crew ops approve's ticked steps, crew record and crew card read, session, end and preview, crew card wait refused naming the read, crew card read land/<kit> with no card open, each landing as the runner reports it beside the run record, and no crew plan card or crew card post, change or close, which crew no longer has"
+ok "the usage gives crew ops offer's notes and steps and crew ops settle, and no ticks for crew ops approve, crew record and crew card read, session, end and preview, crew card wait refused naming the read, crew card read land/<kit> with no card open, each landing as the runner reports it beside the run record, and no crew plan card or crew card post, change or close, which crew no longer has"
 
 has "$usage" "pushes nothing and levels no host"; has "$usage" "origin/main"; lacks "$usage" "behind GitHub's"
 ok "the usage says a landing pushes nothing and levels no host, and a bolt is cut from origin/main"

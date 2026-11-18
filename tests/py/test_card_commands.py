@@ -532,6 +532,32 @@ def test_a_post_pending_you_answers_with_the_card_the_record_already_holds_open_
                                        "call get_request (requestId req_c1, name wldn-ops)\n")
 
 
+class TestAStepCardsHeads:
+    """rail-cards "One step for four hosts before the Willdan cutover": a shared step card's post and each change record
+    the steps it names, so crew ops settle settles what the user was shown (record 0070, Decision 3)."""
+    TO, CHA = "a" * 40, "b" * 40
+    HEADS = f"mac-studio@{TO} macbook-pro@{TO} deneb@{TO} chuck-herdr-alpha@{CHA}"
+    FACTS = dict(env="mac-studio", n=7, key="op/mac-studio/7", text="Move the Archives disk from mac-studio to deneb.", doer="user",
+                 held=False, why=None, where=None, commands=[], done=None, gate=None, to=TO, before=True, deployed=True,
+                 hosts=["mac-studio", "macbook-pro", "deneb", "chuck-herdr-alpha"], heads=HEADS.split())
+
+    def test_a_shared_step_cards_post_records_the_heads_of_each_step_it_names(self):
+        acts = Acts({"match_area": (MATCHED, None), "post_request": (dict(POSTED, requestId="req_7"), None)}, caller="afterthought-ops")
+        assert plan.row_card_post(None, "afterthought", "afterthought-ops", cards.step_card, self.FACTS, WHERE, acts) == "req_7"
+        posted, = acts.emitted
+        assert (posted["Act"], posted["Key"], posted["On"], posted["Heads"]) == ("card.post", "op/mac-studio/7", ["env/mac-studio"], self.HEADS)
+
+    def test_a_change_of_it_records_the_heads_it_names_now(self):
+        acts = Acts({"get_request": ({"status": "pending", "version": 3}, None), "update_request": ({"version": 4}, None)},
+                    entries=[post("op/mac-studio/7", "afterthought-ops", "req_7", Heads=self.HEADS)], caller="afterthought-ops")
+        now = self.HEADS.replace(f"deneb@{self.TO} ", "")
+        facts = dict(self.FACTS, hosts=["mac-studio", "macbook-pro", "chuck-herdr-alpha"], heads=now.split())
+        assert plan.row_card_change(None, "afterthought", "afterthought-ops", cards.step_card, facts, "deneb's is recorded done", WHERE,
+                                    acts) == "req_7"
+        assert [(e["Act"], e.get("Heads")) for e in acts.emitted] == [("card.update", now)]
+        assert plan.built_fields({"heads": ["deneb"]}) == {"Heads": "deneb"}
+
+
 # A step's card following its deploy's card, which swancloud-ops's run record still holds open (rail-cards: a post
 # that follows an open card reads it).
 DEPLOY_HELD = [post("deploy/srv", "swancloud-ops", "req_d1")]
@@ -621,21 +647,21 @@ def marked_post(args):
     return dict(POSTED, requestId="req_d7"), None
 
 
-def test_a_deploy_waiting_on_seven_steps_posts_one_list_of_five_boxes_and_nothing_is_refused():
-    """rail-cards "Seven steps the deploy waits on, and Pending You refuses questions carrying highStakes": one list of
-    five boxes carrying highStakes on the card posts, its form recorded boxes."""
-    qs = [{"id": "q1", "kind": "multi", "options": []}, {"id": "q2", "kind": "multi", "options": []}]
-    assert marked_post({"questions": [dict(qs[0], highStakes=True), qs[1]]}) == (None, MARKED_WORDS)
-    assert marked_post({"questions": qs, "highStakes": True}) == (None, MARKED_WORDS)
+def test_a_deploy_that_waited_on_seven_steps_posts_the_hold_to_approve_and_nothing_is_refused():
+    """rail-cards "The step done" (record 0070): once each of seven
+    steps the deploy waited on is done, its card is the hold-to-approve of risk high, the steps listed done first, with
+    no box, no question and no highStakes, so the Pending You that refuses a card of questions carrying highStakes
+    posts it, its post recorded with nothing refused and no form."""
     facts = dict(env="swancloud-srv", head="b" * 40, base="a" * 40, landings=[], notes=None, steps=[], before=[], after=[],
-                 waited=[dict(n=str(i), text=f"step {i}", why=f"Why step {i}.", to="b" * 40, key=f"{i}" * 12, state="waiting")
+                 waited=[dict(n=str(i), text=f"step {i}", why=f"Why step {i}.", to="b" * 40, key=f"{i}" * 12, state="done")
                          for i in range(1, 8)])
     acts = Acts({"match_area": (MATCHED, None), "post_request": marked_post}, caller="swancloud-ops")
     assert plan.row_card_post(None, "swancloud", "swancloud-ops", cards.deploy_card, facts, WHERE, acts) == "req_d7"
     post = next(a for t, a in acts.calls if t == "post_request")
-    assert (post["kind"], post["highStakes"], "questions" in post, len(post["options"])) == ("multi", True, False, 5)
+    assert (post["kind"], "highStakes" in post, "questions" in post, "options" in post) == ("approve", False, False, False)
+    assert post["approve"]["risk"] == "high" and post["artifacts"][0]["title"] == "Before the deploy: 7 steps, yours, done"
     assert [(e["Act"], e.get("refused"), e.get("Card"), e.get("Form")) for e in acts.emitted] == [
-        ("card.post", None, "req_d7", "boxes")]
+        ("card.post", None, "req_d7", None)]
 
 
 def test_a_users_step_of_370_characters_with_no_commands_gets_its_card_its_words_whole():

@@ -32,7 +32,7 @@ def bolts(at="code", carries=None, logs=None):
     import runner
     w = FactsWrite(plan_text(bolts=[("y", "switchboard-kit", "swb-1")],
                              units=[("a", "switchboard-kit", "y", []), ("b", "switchboard-kit", "y", []), ("bump", "switchboard-kit", "y", [], "chore")]))
-    act, work, given = runner.bolt_launch(w.plan, "y", "wldn")  # y's base place, request 1, as a start launches it
+    act, work, given = runner.bolt_launch(w.plan, "y", "wldn", runner.FIRST)  # y's base place, request 1, as a start launches it
     plan.request(w, act, work, **given)
     plan.reach_places(FLEET, w, "y")
     requests = plan.Plan(w.files.get("requests.rec") or runner.REQUESTS).recs("Request")
