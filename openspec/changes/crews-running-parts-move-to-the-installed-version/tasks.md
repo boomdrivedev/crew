@@ -20,7 +20,7 @@ Before the first task, sync the tests' venv once: `devenv shell -- moon run test
 ## 4. A session on an older build is offered its restart
 
 - [x] 4.1 `crew.offer_due` offers a session its restart only where it loaded a build whose release names another commit than the installed crew's and has not been offered for the installed command's real path, and `crew.offer_said` words the offer in plain English, naming both versions and the session's id (design Decision 6; Task notes 4.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_hold.py::TestOffer"`.
-- [ ] 4.2 crew's Stop hook shows a session that is no crew agent and runs an older build its offer once, as a `systemMessage`, marks the session for that install, and still hands a due standing agent its restart (design Decision 6; Task notes 4.2). Verify `tests/suite t-hold` ends with "0 failed".
+- [x] 4.2 crew's Stop hook shows a session that is no crew agent and runs an older build its offer once, as a `systemMessage`, marks the session for that install, and still hands a due standing agent its restart (design Decision 6; Task notes 4.2). Verify `tests/suite t-hold` ends with "0 failed".
 
 ## 5. The how-to says so
 
