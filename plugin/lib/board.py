@@ -1030,10 +1030,13 @@ def read_frame(label):
 
 def follow(label, once=False):
     """The board tab: the latest frame drawn at the pane's width, again whenever the frame, the pane's size or how
-    stale the frame is changes; checked once a second."""
+    stale the frame is changes; checked once a second, and after each draw the tab starts again through the installed
+    command, as `crew _board <label>`, once the installed crew names another commit than the one it started on
+    (crew.Lasting). With once, one draw, moving nothing."""
     tty = sys.stdout.isatty()
     color = tty and not os.environ.get("NO_COLOR")
     seen, data, mtime = None, None, False
+    lasting = None if once else crew.Lasting(f"crew's board tab of {label}")
     while True:
         try:
             m = frame_path(label).stat().st_mtime_ns
@@ -1050,6 +1053,7 @@ def follow(label, once=False):
             sys.stdout.flush()
         if once:
             return
+        lasting.look(sys.argv[1:])
         time.sleep(1)
 
 

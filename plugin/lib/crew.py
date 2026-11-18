@@ -2726,6 +2726,28 @@ def lasting_look(started):
     return move_due(behind({"commit": started}, {"commit": installed}), os.environ.get(MOVED_TO), installed), installed
 
 
+class Lasting:
+    """A lasting process's moves to the installed crew (host-holds-and-updates "Each lasting process of crew's moves to
+    the installed crew by itself"): the commit it started on, read once at its start (started_commit), and at each look
+    (lasting_look) a start again through the installed command with its own arguments (move_here) where one is due, or,
+    stuck, its name's line said once on standard error, the process running on as it is."""
+
+    def __init__(self, name):
+        self.name, self.started, self.said = name, started_commit(), False
+
+    def look(self, argv, env=None):
+        """One look: what it did, "move" (returning only where the start again failed), "stuck" or None. env, a
+        callable, gives what the move hands on, asked only for a move."""
+        what, installed = lasting_look(self.started)
+        if what == "move":
+            move_here(argv, installed, env() if env else None)
+        elif what == "stuck" and not self.said:
+            print(f"{self.name} was started again as the crew the host has installed and still runs another, its "
+                  "release not the one the installed crew names: it runs on as it is", file=sys.stderr)
+            self.said = True
+        return what
+
+
 # The installed commits a move could not start again for (move_here), which this process does not try again.
 MOVE_FAILED = set()
 

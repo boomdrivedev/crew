@@ -630,16 +630,21 @@ class TestMoves:
         monkeypatch.delenv(crew.MOVED_TO, raising=False)
         profile = tmp_path / "profile/bin"
         profile.mkdir(parents=True)
-        (store / "def-crew/bin").mkdir(parents=True)
-        (store / "def-crew/bin/crew").write_text("#!/bin/sh\n")
-        (store / "def-crew/bin/crew").chmod(0o755)
-        (profile / "crew").symlink_to(store / "def-crew/bin/crew")
         monkeypatch.setenv("PATH", str(profile))
-        self.installed = {"root": str(store / "def-crew"), "commit": self.NEW, "version": "v0.67.1", "from": "release", "unread": None}
         monkeypatch.setattr(crew, "ask_release", lambda cmd: self.installed)
+        self.install(store, profile, "def-crew", self.NEW)
         self.started = []
         monkeypatch.setattr(crew.os, "execvpe", lambda file, argv, env: self.started.append((file, argv, env)))
         return store, home, profile
+
+    def install(self, store, profile, name, commit):
+        """The host installs the build name, whose crew _release names commit: the profile's crew links to it."""
+        (store / name / "bin").mkdir(parents=True)
+        (store / name / "bin/crew").write_text("#!/bin/sh\n")
+        (store / name / "bin/crew").chmod(0o755)
+        (profile / "crew").unlink(missing_ok=True)
+        (profile / "crew").symlink_to(store / name / "bin/crew")
+        self.installed = {"root": str(store / name), "commit": commit, "version": "v0.67.1", "from": "release", "unread": None}
 
     def test_a_move_runs_the_installed_command_in_its_own_process(self, build):
         store, home, profile = build
@@ -662,6 +667,45 @@ class TestMoves:
         assert len(self.started) == 1, "a move that could not start was tried again for the same install"
         crew.move_here(["_rail", "wldn"], self.LATER)
         assert len(self.started) == 2, "a later install's move was not tried"
+
+    def seconds(self, monkeypatch, n):
+        """time.sleep standing for n seconds of a tab's clock, the tab ended at the next."""
+        slept = []
+
+        def sleep(s):
+            if len(slept) == n:
+                raise KeyboardInterrupt
+            slept.append(s)
+        monkeypatch.setattr(board.time, "sleep", sleep)
+        return slept
+
+    def test_a_board_tab_moves_after_its_first_draw(self, build, tmp_path, monkeypatch, capsys):
+        """host-holds-and-updates, Scenarios: A board tab older than the install; Started again and still another."""
+        store, home, profile = build
+        monkeypatch.setattr(board, "FRAMES", tmp_path / "frames")
+        monkeypatch.setattr(board.sys, "argv", ["board.py", "_board", "wldn"])
+        self.seconds(monkeypatch, 0)
+        with pytest.raises(KeyboardInterrupt):
+            board.follow("wldn")
+        assert capsys.readouterr().out, "the tab moved before its first draw"
+        assert [argv for _, argv, _ in self.started] == [["bash", str(profile / "crew"), "_board", "wldn"]]
+        assert self.started[0][2][crew.MOVED_TO] == self.NEW
+        self.started.clear()
+        monkeypatch.setenv(crew.MOVED_TO, self.NEW)
+        self.seconds(monkeypatch, 3)
+        with pytest.raises(KeyboardInterrupt):
+            board.follow("wldn")
+        assert self.started == [], "a tab started again for the installed commit started again for it once more"
+        said = capsys.readouterr().err
+        assert said.count("crew's board tab of wldn was started again") == 1 and "it runs on as it is" in said
+        self.install(store, profile, "ghi-crew", self.LATER)
+        self.seconds(monkeypatch, 0)
+        with pytest.raises(KeyboardInterrupt):
+            board.follow("wldn")
+        assert [env[crew.MOVED_TO] for _, _, env in self.started] == [self.LATER], "a stuck tab did not move at a later install"
+        monkeypatch.delenv(crew.MOVED_TO)
+        board.follow("wldn", once=True)
+        assert len(self.started) == 1, "a board drawn once moved"
 
     def test_on_a_checkout_the_installed_commit_is_read_with_no_process(self, tmp_path, monkeypatch):
         """host-holds-and-updates, Scenario: A checkout moves under a tab: its HEAD at the start against its HEAD now,
