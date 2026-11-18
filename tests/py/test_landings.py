@@ -2576,6 +2576,20 @@ class TestLandsDue:
         assert self.due([box("y", H2)], {"bolt/y": ("req_1", H1[:7])}, requests, reads, posted, work={"y": work()}) == []
         assert self.due([box("y", H2)], {"bolt/y": ("req_2", H2[:7])}, requests, reads, posted) == [("bolt/y", 1)]
 
+    def test_a_spent_send_posts_no_land_at_any_head_after_a_later_land(self):
+        """rail-cards "A landing the runner or Flume stopped keeps its box" and "A later land stopped too"
+        (a-stopped-bolt-proven-again-lands, Decision 3): y's land 5 on req_1's send was stopped at abc1234, and its land
+        on proof at def5678, request 6, was stopped too. The row ticked on req_1's send at abc1234, standing at def5678
+        by its own work unchanged, is due nothing, since that send is spent for good; req_2's send at def5678 is due."""
+        from test_runner import rec
+        requests = self.requests(rec(5, "land", "bolt/y", Of=1), rec(6, "land", "bolt/y", Of=1))
+        posted = [dict(work="bolt/y", card="req_1", head=H1[:7], request="5", stopped=True),
+                  dict(work="bolt/y", card=None, head=H2[:7], request="6", stopped=True)]
+        reads = self.reads(refused={5: "flume refused the submission: a place on bolt/y is live",
+                                    6: "flume refused the submission: the merge queue is closed"})
+        assert self.due([box("y", H2)], {"bolt/y": ("req_1", H1[:7])}, requests, reads, posted, work={"y": work()}) == []
+        assert self.due([box("y", H2)], {"bolt/y": ("req_2", H2[:7])}, requests, reads, posted) == [("bolt/y", 1)]
+
     def test_no_land_on_a_send_or_on_proof_while_flume_names_a_place_on_the_branch(self):
         """bolt-teams "A place on the branch at the send" and "A land due on proof" (a-land-waits-while-a-place-on-its-
         bolts-branch-is-live, Decision 2): Flume's status of y's base place names fix--y-notes on bolt/y, a place no launch
