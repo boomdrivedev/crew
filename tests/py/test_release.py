@@ -191,6 +191,7 @@ class TestInstalled:
         monkeypatch.setattr(crew, "HOME", build)
         monkeypatch.setattr(crew, "STORE", f"{tmp_path / 'store'}/")
         monkeypatch.setattr(crew, "ASKED", {})
+        monkeypatch.setattr(crew, "KEPT", tmp_path / "cache/crew/installed")
         profile = tmp_path / "profile/bin"
         profile.mkdir(parents=True)
         monkeypatch.setenv("PATH", str(profile))
@@ -261,6 +262,58 @@ class TestInstalled:
     def test_no_installed_command_is_unread_saying_no_folder_outside_the_store_has_a_crew(self, host, tmp_path, monkeypatch):
         monkeypatch.setenv("PATH", str(crew_in(tmp_path / "store/def-claude-code/bin")))
         assert crew.installed() == crew.unread_crew("no folder of crew's path outside the Nix store has a crew")
+
+    SAID = {"commit": "2" * 40, "version": "v0.67.1", "from": "release", "unread": None}
+
+    def test_a_store_builds_answer_is_kept_on_the_host_and_read_before_asking(self, host, tmp_path, monkeypatch):
+        """host-holds-and-updates "The host keeps each installed build's answer", Scenario: Two processes of a host."""
+        build, profile = host
+        (profile / "crew").symlink_to(crew_in(tmp_path / "store/def-crew/bin") / "crew")
+        said = dict(self.SAID, root=str(tmp_path / "store/def-crew"))
+        ran = Ran(json.dumps(said) + "\n")
+        monkeypatch.setattr(subprocess, "run", ran)
+        assert crew.installed() == said and len(ran.asked) == 1
+        kept = list(crew.KEPT.iterdir())
+        real = str((tmp_path / "store/def-crew/bin/crew").resolve())
+        assert [k.name for k in kept] == [f"{crew.hashlib.sha256(real.encode()).hexdigest()[:32]}.json"]
+        monkeypatch.setattr(crew, "ASKED", {})  # the host's second process
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("the kept answer was asked again"))
+        assert crew.installed() == said
+
+    @pytest.mark.parametrize("ran", [Ran(late=True), Ran("", code=2), Ran(json.dumps({"root": "/r", "version": "v0.67.1", "from": "release"}))])
+    def test_an_unread_answer_and_one_from_outside_the_store_are_never_kept(self, host, tmp_path, monkeypatch, ran):
+        """Scenarios: An unread answer; A command outside the store."""
+        build, profile = host
+        (profile / "crew").symlink_to(crew_in(tmp_path / "store/def-crew/bin") / "crew")
+        monkeypatch.setattr(subprocess, "run", ran)
+        assert crew.installed()["unread"]
+        assert not crew.KEPT.exists() or not list(crew.KEPT.iterdir())
+        monkeypatch.setattr(crew, "ASKED", {})
+        crew.installed()
+        assert len(ran.asked) == 2, "an unread answer was not asked again by the next process"
+        (profile / "crew").unlink()
+        (profile / "crew").symlink_to(crew_in(tmp_path / "checkout/plugin/bin") / "crew")
+        said = dict(self.SAID, root=str(tmp_path / "checkout"), **{"from": "checkout"})
+        read = Ran(json.dumps(said))
+        monkeypatch.setattr(subprocess, "run", read)
+        assert crew.installed() == said
+        monkeypatch.setattr(crew, "ASKED", {})
+        assert crew.installed() == said
+        assert len(read.asked) == 2, "a command outside the store was not asked by each process"
+        assert not crew.KEPT.exists() or not list(crew.KEPT.iterdir()), "a command outside the store had its answer kept"
+
+    def test_a_kept_answer_crew_cannot_read_is_asked_again(self, host, tmp_path, monkeypatch):
+        """Scenario: A kept answer crew can't read."""
+        build, profile = host
+        (profile / "crew").symlink_to(crew_in(tmp_path / "store/def-crew/bin") / "crew")
+        path = crew.kept_path(str((tmp_path / "store/def-crew/bin/crew").resolve()))
+        path.parent.mkdir(parents=True)
+        path.write_text("not json")
+        said = dict(self.SAID, root=str(tmp_path / "store/def-crew"))
+        ran = Ran(json.dumps(said))
+        monkeypatch.setattr(subprocess, "run", ran)
+        assert crew.installed() == said and len(ran.asked) == 1
+        assert json.loads(path.read_text()) == said, "the answer read again was not kept in its place"
 
 
 INSTALLED = "/etc/profiles/per-user/chuck/bin/crew"

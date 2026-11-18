@@ -546,8 +546,11 @@ class TestInstalledCrew:
                                                                   "from": "release", "unread": None})
         assert board.behind_here() is True and board.behind_here() is True
         assert asked == [str(profile / "crew")], "the installed crew was asked more than once for one path"
-        theirs["commit"] = "a" * 40
-        monkeypatch.setattr(crew, "ASKED", {})
+        monkeypatch.setattr(crew, "ASKED", {})  # another process of the host reads the answer the host keeps
+        assert board.behind_here() is True and len(asked) == 1
+        (profile / "crew").unlink()
+        (profile / "crew").symlink_to(self.built(store, "uvw-crew"))
+        theirs = dict(theirs, root=str(store / "uvw-crew"), commit="a" * 40)
         assert board.behind_here() is False
 
     def test_a_follower_that_is_the_installed_crew_or_has_none_asks_nothing_and_never_lags(self, build, monkeypatch):

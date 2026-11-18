@@ -2604,7 +2604,9 @@ def installed():
     """The crew this host has installed, as facts of crew_read's shape: crew_read of its own root with no process where
     the installed command is crew's own; unread where there is none; otherwise its answer to `crew _release`, asked
     within RELEASE_ASKED seconds, once for each real path of the command (ASKED), an answer late, failed or missing a
-    field unread with its why."""
+    field unread with its why. Where the command's real path is in the Nix store, which names one build for ever, the
+    host keeps its read answer (kept_path) and a process reads it there before it asks (host-holds-and-updates "The host
+    keeps each installed build's answer"); an unread answer, or one from outside the store, is never kept."""
     cmd = installed_here()
     if cmd is None:
         return unread_crew(NONE_INSTALLED)
@@ -2612,8 +2614,60 @@ def installed():
         return crew_read()
     real = os.path.realpath(cmd)
     if real not in ASKED:
-        ASKED[real] = ask_release(cmd)
+        kept = kept_answer(real)
+        ASKED[real] = kept or ask_release(cmd)
+        if kept is None:
+            keep_answer(real, ASKED[real])
     return ASKED[real]
+
+
+# Where the host keeps each installed build's answer to `crew _release`, by its command's real path (kept_path): a
+# derived cache of things that never change, thrown away with no loss (state.4).
+KEPT = pathlib.Path.home() / ".cache/crew/installed"
+
+
+def kept_path(real):
+    """Where the host keeps the answer of the installed command whose real path is real: None outside the Nix store,
+    whose answer can change under the same path; else a file named by the first 32 hexadecimal characters of the path's
+    SHA-256."""
+    if not real.startswith(STORE):
+        return None
+    return KEPT / f"{hashlib.sha256(real.encode()).hexdigest()[:32]}.json"
+
+
+def kept_answer(real):
+    """The answer the host keeps for real (kept_path), read field by field as an answer is (release_said), or None where
+    it keeps none or what it keeps can't be read, which is asked again."""
+    path = kept_path(real)
+    try:
+        text = path.read_text() if path else None
+    except OSError:
+        return None
+    return release_said(text)[0] if text is not None else None
+
+
+def keep_answer(real, got):
+    """Keep a read answer for real where its path is in the store (kept_path), written whole and renamed into place; a
+    file crew can't write keeps nothing and stops nothing, the answer asked again by the next process."""
+    path = kept_path(real)
+    if path is None or got.get("unread") is not None:
+        return
+    try:
+        write_whole(path, json.dumps(got) + "\n")
+    except OSError:
+        pass
+
+
+def write_whole(path, text):
+    """A file written whole and renamed into place, its folder made where missing, so no reader sees half of it."""
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    new = path.with_name(f".{path.name}.{os.getpid()}.new")
+    try:
+        new.write_text(text)
+        os.replace(new, path)
+    finally:
+        new.unlink(missing_ok=True)
 
 
 def behind(mine, theirs):
