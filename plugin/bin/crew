@@ -465,7 +465,8 @@
 # the drive's branch as it writes it:
 #   crew events   [--label L] [--about <object>] [--since <time>] [--follow] [--json]
 #                                      the entries on the drive's branch, in time order; no host is asked;
-#                                      --follow prints this host's entries at once and another's within the minute
+#                                      --follow prints this host's entries at once and another's within the minute,
+#                                      and moves to the installed crew by itself, printing every entry once
 #   crew events   --push [--label L]   push what of this host's run record a refused push left on it
 #   crew trace    <object>             one bolt's, unit's or signal's history: what was done, by whom, in which
 #                                      session, with which commit, and what it led to

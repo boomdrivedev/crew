@@ -37,6 +37,15 @@ def scratch_record(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def scratch_cache(monkeypatch, tmp_path_factory):
+    """The installed builds' answers a case keeps (crew.installed) are kept under a scratch folder, never the host's own
+    under ~/.cache/crew: a case that stands a folder of its own for the store would otherwise leave its answer there for
+    the next run to read. A case that names its own folder sets crew.KEPT itself."""
+    import crew
+    monkeypatch.setattr(crew, "KEPT", tmp_path_factory.mktemp("installed"))
+
+
+@pytest.fixture(autouse=True)
 def pushed(monkeypatch):
     """record.emit pushes each entry it writes through record.reach, which fetches and pushes the drive's branch:
     here reach stands for it, recording each label it was asked to push, so every case that emits still runs and one
