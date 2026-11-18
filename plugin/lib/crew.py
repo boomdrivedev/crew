@@ -2616,6 +2616,32 @@ def installed():
     return ASKED[real]
 
 
+def behind(mine, theirs):
+    """Whether a process runs a crew other than the one its host has installed (host-holds-and-updates "Each lasting
+    process of crew's moves to the installed crew by itself"), from crew_read's facts of each (code.7): True when both
+    name a commit and the commits differ, False when they name one, and None when either names none, which starts nothing
+    again on a guess (read.1)."""
+    if not (mine or {}).get("commit") or not (theirs or {}).get("commit"):
+        return None
+    return mine["commit"] != theirs["commit"]
+
+
+# The installed commit a lasting process was started again for (move_here), handed on in its environment so that it
+# moves once for each install (move_due).
+MOVED_TO = "CREW_MOVED_TO"
+
+
+def move_due(lag, moved_to, installed):
+    """What a lasting process does at its look (host-holds-and-updates "A lasting process moves for an install only on
+    what it read"), from behind's answer (lag), the installed commit it was started again for (moved_to, MOVED_TO's, or
+    None) and the installed commit now (code.7): None, it runs on as it is, where the lag is not True, either commit
+    unread or both the same; "stuck", it says once that it runs on as it is, where it lags and was already started again
+    for this installed commit; else "move", started again through the installed command."""
+    if lag is not True:
+        return None
+    return "stuck" if moved_to and moved_to == installed else "move"
+
+
 def ask_release(cmd):
     """Another crew's answer to `crew _release`, read (release_said), or unread saying why."""
     try:

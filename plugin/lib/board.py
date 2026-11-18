@@ -1304,17 +1304,8 @@ def crew_stamp():
     return os.path.realpath(cmd) if cmd else None
 
 
-def behind(mine, theirs):
-    """Whether a follower runs a crew other than the one its host has installed (crew-board "A follower follows on the
-    crew its host has installed"), from crew_read's facts of each (code.7): True when both name a commit and the commits
-    differ, False when they name one, and None when either names none, which starts nothing again on a guess (read.1)."""
-    if not (mine or {}).get("commit") or not (theirs or {}).get("commit"):
-        return None
-    return mine["commit"] != theirs["commit"]
-
-
 def behind_here():
-    """Whether this process follows on a crew other than the one its host has installed (behind): False, read with no
+    """Whether this process follows on a crew other than the one its host has installed (crew.behind): False, read with no
     process, where the installed command is this crew's own, as a checkout's always is, or the host has none, since
     then there is no other crew to follow on; else this build's release against the installed crew's answer to crew
     _release, asked once for each real path of the installed command (crew.installed), so a follower asks again only
@@ -1322,7 +1313,7 @@ def behind_here():
     cmd = crew.installed_here()
     if cmd is None or crew.own_command(cmd):
         return False
-    return behind(crew.crew_read(), crew.installed())
+    return crew.behind(crew.crew_read(), crew.installed())
 
 
 def moved_at():

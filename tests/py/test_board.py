@@ -530,7 +530,7 @@ class TestInstalledCrew:
         ({"commit": None, "unread": "no release file"}, {"commit": "b" * 40}, None),
         ({"commit": "a" * 40}, {"commit": None, "unread": "did not answer crew _release within 5 seconds"}, None), (None, None, None)])
     def test_a_follower_lags_only_when_both_crews_name_a_commit_and_they_differ(self, mine, theirs, lag):
-        assert board.behind(mine, theirs) is lag
+        assert crew.behind(mine, theirs) is lag
 
     def test_a_build_lags_behind_an_installed_build_of_another_release_asked_once_for_its_path(self, build, monkeypatch):
         """A rail tab opened on one build takes the lock after the host installed another (deneb, 2026-11-08: a tab on
@@ -594,6 +594,23 @@ class TestInstalledCrew:
         f.again({})
         assert ran == [["bash", str(tmp_path / "plugin/bin/crew"), "_update", "--label", "wldn"]]
         assert started == [[sys.executable, str(board.LIB / "board.py"), "_follow"]]
+
+
+class TestMoves:
+    """host-holds-and-updates "Each lasting process of crew's moves to the installed crew by itself" and "A lasting
+    process moves for an install only on what it read": the rail tab, the board tab, the flow reader and the follower
+    each start again through the installed command once the installed crew names another commit than the one they
+    started on, once for each install, and run on as they are where either commit is unread."""
+
+    OLD, NEW, LATER = "1" * 40, "2" * 40, "3" * 40
+
+    @pytest.mark.parametrize("lag, moved_to, installed, what", [
+        (None, None, NEW, None), (None, NEW, NEW, None), (False, None, NEW, None), (False, NEW, NEW, None),
+        (True, None, NEW, "move"), (True, "", NEW, "move"),
+        (True, NEW, NEW, "stuck"),
+        (True, NEW, LATER, "move")])
+    def test_a_process_moves_once_for_each_install(self, lag, moved_to, installed, what):
+        assert crew.move_due(lag, moved_to, installed) == what
 
 
 class TestRefresh:
