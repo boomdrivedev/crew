@@ -3314,6 +3314,69 @@ def test_a_land_that_waited_on_a_landing_fix_lands_on_the_same_send_once_it_took
     assert plan.raise_landings(FLEET, "swancloud", "crew", acts) == "req_k1" and len(acts.posts) == 1
 
 
+def spent_kept(bolt, of):
+    """The run record of a bolt a spent kept send held (a-stopped-bolt-proven-again-lands, the signal's case): req_k1
+    posted, answered and closed keeping the user's send for bolt at abc1234, and its land 5 on that send, a land of its
+    base place (of), asked and then stopped at abc1234, Flume's 203 words as Why; with requests.rec's land 5."""
+    from test_runner import rec
+    entries = [dict(Act="card.post", Key="land/crew", By="swancloud-ops", Card="req_k1", Heads=f"{bolt}@abc1234"),
+               dict(Act="card.answer", Key="land/crew", By="swancloud-ops", Card="req_k1", Answer="approved", Heads=f"{bolt}@abc1234"),
+               dict(Act="bolt.submit", On=[f"bolt/{bolt}"], Card="req_k1", Head=H1, Request="5", Outcome="asked"),
+               dict(Act="card.close", Key="land/crew", By="swancloud-ops", Card="req_k1", Rows="0", Heads=f"{bolt}@abc1234"),
+               dict(Act="bolt.submit", On=[f"bolt/{bolt}"], Head=H1, Request="5", Outcome="stopped", Why=WAIT)]
+    return entries, [rec(5, "land", f"bolt/{bolt}", Of=of)]
+
+
+def test_a_bolt_a_spent_kept_send_held_lands_on_proof_once_proven_at_a_new_head(monkeypatch):
+    """rail-cards "Proven again at a new head", "Marked to stay" and "A later land stopped too"
+    (a-stopped-bolt-proven-again-lands, Decision 4): the signal's case. y's land on req_k1's send, kept on its close,
+    was stopped while Flume named a fix live on bolt/y; the fix merged, and y, not marked to stay, reads proven at
+    def5678 with its own work unchanged. The raise posts one land of y on proof there and no card, and the next raise
+    posts none. z, marked to stay, the same: no land, and a card asking for z at def5678 with its box. y's land on proof
+    at def5678 stopped too: no land on req_k1's spent send, and a card asking for y there, saying its land on proof was
+    stopped."""
+    from test_runner import rec
+    entries, lands = spent_kept("y", 1)
+    acts = proof_acts(monkeypatch, {"y": row("y", H2)}, entries, drive=entries, lands=lands, works={"y": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert acts.posts == [("plan(crew): land y on proof", "bolt.submit", ["bolt/y"], dict(Form="proof", Head=H2, Request="6", Outcome="asked"), [])]
+    assert not any(t == "post_request" for t, _ in acts.calls) and acts.worked == []
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert len(acts.posts) == 1 and not any(t == "post_request" for t, _ in acts.calls)
+    # z, marked to stay: no land, and a card asking for z at def5678 with its box
+    entries, lands = spent_kept("z", 2)
+    acts = proof_acts(monkeypatch, {"z": row("z", H2)}, entries, drive=entries, lands=lands, works={"z": work()},
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("z", "def5678", False)]]
+    # y's land on proof at def5678 stopped too: req_k1's send is spent, so no land of y on it; the card asks for y
+    stop = "flume refused it: the merge queue is closed"
+    entries, lands = spent_kept("y", 1)
+    entries += [dict(Act="bolt.submit", On=["bolt/y"], Form="proof", Head=H2, Request="6", Outcome="asked"),
+                dict(Act="bolt.submit", On=["bolt/y"], Head=H2, Request="6", Outcome="stopped", Why=stop)]
+    acts = proof_acts(monkeypatch, {"y": row("y", H2, stopped=(H2, stop))}, entries, drive=entries, works={"y": work()},
+                      lands=lands + [rec(6, "land", "bolt/y", Of=1)], reads=TestLandsDue().reads(refused={5: WAIT, 6: stop}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    post = next(a for t, a in acts.calls if t == "post_request")
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("y", "def5678", False)]]
+    assert f"Its land on proof at def5678 was stopped, nothing of the bolt's: {stop}" in json.dumps(post)
+
+
+def test_a_bolt_a_spent_kept_send_held_at_its_stops_head_is_asked_on_the_card(monkeypatch):
+    """rail-cards "Proven again at the stop's own head" (a-stopped-bolt-proven-again-lands, Decision 4): z's land on
+    req_k1's send, kept on its close, was stopped at abc1234, and z still reads proven there, its row saying what stopped
+    it. No send holds it: no land is posted, and the card posted asks for z at abc1234 with its box, saying what stopped
+    its last landing."""
+    entries, lands = spent_kept("z", 2)
+    acts = proof_acts(monkeypatch, {"z": row("z", stopped=(H1, WAIT))}, entries, drive=entries, lands=lands,
+                      reads=TestLandsDue().reads(refused={5: WAIT}))
+    plan.raise_landings(FLEET, "swancloud", "crew", acts)
+    post = next(a for t, a in acts.calls if t == "post_request")
+    assert getattr(acts, "posts", []) == [] and posted_heads(acts) == [[("z", "abc1234", False)]]
+    assert "Its last landing at abc1234 was stopped, nothing of the bolt's" in json.dumps(post) and "(203)" in json.dumps(post)
+
+
 def test_an_answered_card_whose_ticked_bolts_land_waits_on_its_branch_is_left_its_send_standing():
     """rail-cards "Ticked beside two that land" (a-land-waits-while-a-place-on-its-bolts-branch-is-live, Decisions 3
     and 4): the user sent land/flume ticking x, y and z; x and y landed, and z's land on that send, request 332, was
