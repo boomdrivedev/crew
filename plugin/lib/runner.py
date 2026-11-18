@@ -1838,12 +1838,16 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None, on_main=()):
     main's naming its work fix/main/<kit>/<name> as work; sent, {a row's work: (the card whose send ticked it, the head
     it ticked)}, for each row a send stands for, the card's answer's and an earlier one's (landings_sent); requests,
     requests.rec's records; reads, the drive's runners as crew read them; posted, the lands crew recorded posting,
-    [{work, card, head, request, waited}] (lands_posted), waited marking one the run record holds recorded waiting; work, each bolt's own work between the head ticked and its head now
+    [{work, card, head, request, waited, stopped}] (lands_posted), waited marking one the run record holds recorded
+    waiting and stopped one it holds stopped; work, each bolt's own work between the head ticked and its head now
     where it moved (bolt_work), by which the send still stands (send_stands). Returns [(work, the launch's number)] in
     the card's order with the fixes of main first, one for each row whose box is ticked on a send that stands for it at
     its head now, that can land (a box), whose launch stands, and none of whose lands was posted at its head now nor
     stands undecided (landing_of: asked or submitted) nor is read unknown, and no land of which posted on the same send
-    was stopped, the send then spent; but a land stopped at its head now, its last, posted on proof or on another send,
+    was stopped, the send then spent for good: one the run record holds stopped (posted's stopped) at the row's head
+    now or any, whatever was asked of the bolt since, a later land on proof stopped among them, and the runner's stop of
+    its last land, not yet recorded (a-stopped-bolt-proven-again-lands, Decision 3); but a land stopped at its head now,
+    its last, posted on proof or on another send,
     bars no send's land there, since a stop is nothing of the bolt's and no fix moves its head, so only a send can land
     it (rail-cards "A landings row is due one land for each send and head" as a-proven-bolt-lands-on-proof modifies it,
     Decision 3); a bolt started before bolts were base places, with no launch of its own, none. No land is due while
@@ -1873,6 +1877,8 @@ def lands_due(rows, sent, requests, reads, posted=(), work=None, on_main=()):
         if launch is None:
             continue
         mine = [p for p in posted if p.get("work") == w and not p.get("waited")]
+        if card is not None and any(p.get("card") == card and p.get("stopped") for p in mine):
+            continue  # a land this send posted was stopped: the send is spent for good, at this head or any
         here = [p for p in mine if p.get("head") and head and (head.startswith(p["head"]) or p["head"].startswith(head))]
         l = landing_of(launch, lands_of(requests, launch), reads, waited)
         if l["outcome"] in ("asked", "submitted", "unknown", "unlaunched", "landed", "dropped", "waiting") or l.get("places"):
