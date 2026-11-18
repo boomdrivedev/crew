@@ -2748,6 +2748,33 @@ class Lasting:
         return what
 
 
+# Each session crew offered its restart, by its id, holding the real path of the installed command it was offered for
+# (offer_due), so it is offered once for each install.
+OFFERS = pathlib.Path.home() / ".local/state/crew/offers"
+
+
+def offer_due(loaded, installed, offered_for, real):
+    """Whether a session that is no crew agent is offered its restart at the end of its turn (host-holds-and-updates "A
+    session on an older build of crew is offered a restart at the end of its turn", "A session is offered its restart
+    once for each install"), from what it loaded (crew_read of its plugin's root), the installed crew (installed), the
+    real path of the installed command it was last offered for (its mark, None where it has none) and that real path
+    now (code.7): only where it loaded a build, read from a release, has not been offered for this real path, and runs
+    another commit than the installed crew's (behind); an unread fact offers nothing (read.1)."""
+    if (loaded or {}).get("from") != "release" or not real or offered_for == real:
+        return False
+    return behind(loaded, installed) is True
+
+
+def offer_said(mine, theirs, session):
+    """The offer in plain words: the version the session runs and the version installed, each its commit's first seven
+    characters where it names none, and that exiting and resuming the conversation, named by its id, runs the installed
+    crew there."""
+    def named(c):
+        return c.get("version") or (c.get("commit") or "")[:7]
+    return (f"This session runs crew {named(mine)}, and {named(theirs)} is installed. To run {named(theirs)} here, exit "
+            f"and resume this conversation (session {session}).")
+
+
 # The installed commits a move could not start again for (move_here), which this process does not try again.
 MOVE_FAILED = set()
 
