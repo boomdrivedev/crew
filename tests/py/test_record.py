@@ -6,6 +6,7 @@ the act and objects each plan command's entry names. That a write's commit carri
 with the host's next, that crew events and crew trace read the branch and ask no host, and that --follow follows the
 branch are the state journey's (t-journey-state). A file written is no process, so these are logic cases."""
 import json
+import os
 
 import pytest
 
@@ -462,7 +463,7 @@ class TestEvents:
         assert record.follow_fetches(label, {"wldn", "swancloud"}, follower, last, now) is fetches
 
     @pytest.mark.parametrize("follower, fetched", [("job", []), ("tab", []), ("unknown", []), ("none", ["wldn/main"])])
-    def test_a_follows_start_fetches_nothing_the_hosts_follower_fetches(self, monkeypatch, follower, fetched):
+    def test_a_follows_start_fetches_nothing_the_hosts_follower_fetches(self, monkeypatch, follower, fetched, moves):
         """The run-record spec, The host's follower fetches: the follow's first round, the host's follower following wldn
         and not madswan, reads wldn from the cache as it stands and fetches madswan, as it does wldn when none follows."""
         got = []
@@ -479,6 +480,103 @@ class TestEvents:
         monkeypatch.setattr("time.sleep", stop)
         record.follow(FLEET, ["wldn", "madswan"], None)
         assert got == fetched + ["madswan/main"]
+
+    OLD, NEW, T, U = "a" * 40, "b" * 40, "1" * 40, "2" * 40
+    DAY = "2026-11-18"
+
+    @pytest.fixture
+    def moves(self, monkeypatch):
+        """The crew a follow started on and the installed crew, both OLD unless a case installs another (self.now), and
+        the follow's start again through the installed command, recorded and not made."""
+        self.now, self.started = self.OLD, []
+        monkeypatch.setattr(crew, "started_commit", lambda: self.OLD)
+        monkeypatch.setattr(crew, "installed_commit", lambda: self.now)
+        monkeypatch.setattr(crew, "MOVE_FAILED", set())
+        monkeypatch.delenv(crew.MOVED_TO, raising=False)
+        monkeypatch.setattr(crew.os, "execvpe", lambda file, argv, env: self.started.append((argv, env)))
+
+    @staticmethod
+    def rec(*ids):
+        return "".join(f"Id: {i}\nAt: 2026-11-18T10:00:0{n}Z\nAct: capture\nBy: wldn-ops\nHost: deneb\nOn: signals/s/0{n}-x\n\n"
+                       for n, i in enumerate(ids))
+
+    @pytest.fixture
+    def branch(self, monkeypatch, moves):
+        """wldn's branch in crew's cache at U, where the host's follower does not follow it: its day's file at T holds
+        entries a and b, and at U a, b and c; any other tip crew's cache can't read. The follow's clock stops after the
+        rounds a case gives (self.rounds)."""
+        listings = {self.T: {f"runs/deneb/{self.DAY}.rec": "blob-t"}, self.U: {f"runs/deneb/{self.DAY}.rec": "blob-u"}}
+        texts = {"blob-t": self.rec("a", "b"), "blob-u": self.rec("a", "b", "c")}
+
+        def blobs_at(repo, tip, prefix=None):
+            tip in listings or crew.fail(f"git ls-tree {tip[:7]} in crew's cache of {repo} failed: not a tree object")
+            return listings[tip]
+        monkeypatch.setattr(plan, "blobs_at", blobs_at)
+        monkeypatch.setattr(plan, "cat_file", lambda repo, names: [texts.get(n) for n in names])
+        monkeypatch.setattr(record.signal, "signal", lambda *a: None)
+        monkeypatch.setattr(crew, "this_host", lambda: "deneb")
+        monkeypatch.setattr(board, "labels_here", lambda fleet, host: [])
+        monkeypatch.setattr(board, "follower_here", lambda: "none")
+        monkeypatch.setattr(plan, "state_of", lambda fleet, label: ("o/state", f"{label}/main"))
+        monkeypatch.setattr(plan, "tip_of", lambda repo, ref, fresh=False: None)
+        monkeypatch.setattr(plan, "tip_here", lambda repo, ref: self.U)
+        self.rounds, slept = 1, []
+
+        def sleep(_):
+            slept.append(_)
+            if len(slept) >= self.rounds:
+                raise KeyboardInterrupt
+        monkeypatch.setattr("time.sleep", sleep)
+
+    def handing(self, monkeypatch, tips, day=None):
+        monkeypatch.setenv(record.FOLLOWED, json.dumps({"day": day or self.DAY, "tips": tips}))
+
+    @pytest.mark.parametrize("text, got", [
+        ('{"day": "2026-11-18", "tips": {"wldn": "' + "1" * 40 + '"}}', {"day": "2026-11-18", "tips": {"wldn": "1" * 40}}),
+        ('{"day": "2026-11-18", "tips": {}}', {"day": "2026-11-18", "tips": {}}),
+        (None, None), ("", None), ("not json", None), ("[]", None), ('{"tips": {}}', None),
+        ('{"day": "18 November", "tips": {}}', None), ('{"day": "2026-11-18"}', None), ('{"day": "2026-11-18", "tips": []}', None),
+        ('{"day": "2026-11-18", "tips": {"wldn": "1234567"}}', None), ('{"day": "2026-11-18", "tips": {"wldn": null}}', None)])
+    def test_what_a_follow_is_handed_is_read_field_by_field(self, text, got):
+        assert record.handed(text) == got
+
+    def test_a_follow_handed_a_tip_prints_each_entry_after_it_once(self, monkeypatch, capsys, branch):
+        """run-record "A followed record that moves prints each entry once", Scenario: An entry arrives while the follow
+        moves: handed wldn's tip T, it prints at the branch's tip U the entry U holds that T does not, and nothing T
+        holds."""
+        self.handing(monkeypatch, {"wldn": self.T})
+        record.follow(FLEET, ["wldn"], None)
+        out = capsys.readouterr().out.splitlines()
+        assert len(out) == 1 and "signals/s/02-x" in out[0], out
+        assert record.FOLLOWED not in os.environ
+
+    def test_a_follow_handed_a_tip_it_cant_read_says_so_once_and_follows_from_the_branch_as_it_stands(self, monkeypatch, capsys, branch):
+        """Scenario: A handed tip crew can't read."""
+        self.handing(monkeypatch, {"wldn": "3" * 40})
+        self.rounds = 3
+        record.follow(FLEET, ["wldn"], None)
+        got = capsys.readouterr()
+        assert got.out == "", "a follow that could not read its handed tip printed what the branch held"
+        assert got.err.count("wldn/main: crew can't read where the follow was before it moved") == 1
+        assert "it follows from the branch as it stands" in got.err
+
+    def test_a_follow_with_nothing_handed_prints_nothing_at_its_first_read(self, capsys, branch):
+        """Scenario: A follow with nothing handed."""
+        record.follow(FLEET, ["wldn"], None)
+        assert capsys.readouterr().out == "" and self.started == []
+
+    def test_a_follow_that_moves_hands_on_its_day_and_the_tips_it_printed_to(self, monkeypatch, capsys, branch):
+        """host-holds-and-updates "Each lasting process of crew's moves to the installed crew by itself": after its round's
+        printing, the follow starts again through the installed command with its own words, handing on the day its follow
+        began and the tip it printed to."""
+        self.handing(monkeypatch, {"wldn": self.T})
+        self.now = self.NEW
+        monkeypatch.setattr(record.sys, "argv", ["record.py", "events", "--follow", "--label", "wldn"])
+        record.follow(FLEET, ["wldn"], None)
+        assert len(capsys.readouterr().out.splitlines()) == 1, "the follow moved before it printed what it read"
+        [(argv, env)] = self.started
+        assert argv[2:] == ["events", "--follow", "--label", "wldn"] and env[crew.MOVED_TO] == self.NEW
+        assert json.loads(env[record.FOLLOWED]) == {"day": self.DAY, "tips": {"wldn": self.U}}
 
     def test_a_follow_reads_again_only_the_days_files_whose_blob_changed_since_it_began(self):
         was = {"runs/mac-studio/2026-10-27.rec": "a", "runs/mac-studio/2026-10-28.rec": "b", "runs/box/2026-10-28.rec": "c"}

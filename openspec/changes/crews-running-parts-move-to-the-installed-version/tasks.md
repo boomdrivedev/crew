@@ -15,7 +15,7 @@ Before the first task, sync the tests' venv once: `devenv shell -- moon run test
 
 ## 3. The flow reader moves and prints each entry once
 
-- [ ] 3.1 `crew events --follow` moves to the installed crew after printing what it read, handing on its day and its tips in `CREW_FOLLOWED`, and a follow handed them prints each entry after them once, saying so once where a handed tip can't be read (design Decision 5; Task notes 3.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_record.py::TestEvents"`.
+- [x] 3.1 `crew events --follow` moves to the installed crew after printing what it read, handing on its day and its tips in `CREW_FOLLOWED`, and a follow handed them prints each entry after them once, saying so once where a handed tip can't be read (design Decision 5; Task notes 3.1). Passes `devenv shell -- tests/.venv/bin/python -m pytest -q -p no:cacheprovider "tests/py/test_record.py::TestEvents"`.
 
 ## 4. A session on an older build is offered its restart
 

@@ -628,6 +628,35 @@ def changed_files(was, now, day):
     return sorted(p for p, b in now.items() if p.endswith(".rec") and pathlib.PurePath(p).stem >= day and was.get(p) != b)
 
 
+# What a followed record hands its new self when it moves to the installed crew (follow): the day its follow began and
+# the tip of each drive's branch it last printed to, as JSON (handed).
+FOLLOWED = "CREW_FOLLOWED"
+DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+TIP = re.compile(r"[0-9a-f]{40}")
+
+
+def handed(text):
+    """What a followed record was handed by the follow it moved from (FOLLOWED), read field by field (read.2): {"day",
+    "tips": {label: commit}}, or None for a value missing or of any other shape."""
+    try:
+        got = json.loads(text) if text else None
+    except ValueError:
+        return None
+    if not isinstance(got, dict) or not isinstance(got.get("day"), str) or not DAY.fullmatch(got["day"]):
+        return None
+    tips = got.get("tips")
+    if not isinstance(tips, dict) or not all(isinstance(l, str) and isinstance(t, str) and TIP.fullmatch(t) for l, t in tips.items()):
+        return None
+    return {"day": got["day"], "tips": dict(tips)}
+
+
+def first_read(plan, repo, tip, day):
+    """A branch's run-record files at tip of the day a follow began or later, {path: blob}, and the entries they hold."""
+    listing = plan.blobs_at(repo, tip, "runs/") if tip else {}
+    changed = changed_files({}, listing, day)
+    return listing, [e for t in plan.cat_file(repo, [listing[p] for p in changed]) for e in parse(t or "")]
+
+
 def follow(fleet, labels, about):
     """Each entry of the labels as it reaches their branches, one line each, until interrupted. Each second it reads
     each branch's tip as this host's cache holds it, with no process (plan.tip_here), and when the tip moved, reads
@@ -635,7 +664,12 @@ def follow(fleet, labels, about):
     what it has not printed (fresh). It fetches a branch only for a drive the host's follower does not fetch, which
     moves the cache itself, as a write on this host does: at its start and then once a minute (follow_fetches); SIGUSR1
     makes its next fetch now. A branch's first read prints nothing, being what was there before. A branch that
-    cannot be read is said once, until it reads again. It asks no host for anything (read.5)."""
+    cannot be read is said once, until it reads again. It asks no host for anything (read.5). After each round's
+    printing it starts again through the installed command once the installed crew names another commit than the one
+    it started on (crew.Lasting), handing its new self the day its follow began and the tip of each branch it printed
+    to (FOLLOWED), whose entries the new follow takes as printed, so it prints each entry once (run-record "A followed
+    record that moves prints each entry once"); a handed tip crew can't read is said once, its drive followed from its
+    branch as it stands."""
     import time
     import board  # board.py imports this module; the host's follower's lock and drives are its
     import plan  # plan.py imports this module; its git layer is only needed here
@@ -647,8 +681,23 @@ def follow(fleet, labels, about):
     tick = {"now": False}
     signal.signal(signal.SIGUSR1, lambda *_: tick.update(now=True))
     period, here = int(os.environ.get("CREW_TEST_PERIOD") or PERIOD), crew.this_host()
-    day = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    was = handed(os.environ.pop(FOLLOWED, None)) or {"day": None, "tips": {}}
+    lasting = crew.Lasting("crew events --follow")
+    day = was["day"] or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
     seen, said, tips, files, last = {}, {}, {}, {}, {}
+    for l in labels:
+        if l not in was["tips"]:
+            continue
+        repo, _ = plan.state_of(fleet, l)
+        try:
+            files[l], got = first_read(plan, repo, was["tips"][l], day)
+        except Refusal as e:
+            why = " ".join(str(e).split())
+            print(f"{l}/main: crew can't read where the follow was before it moved ({why}); it follows from the branch as "
+                  "it stands", file=sys.stderr, flush=True)
+            files.pop(l, None)
+            continue
+        seen[l], tips[l] = {e["Id"] for e in got}, was["tips"][l]
     try:
         while True:
             again, tick["now"] = tick["now"], False
@@ -681,6 +730,7 @@ def follow(fleet, labels, about):
             for e in fresh((), new):
                 if not about or names(e, about):
                     print(line(e), flush=True)
+            lasting.look(sys.argv[1:], lambda: {FOLLOWED: json.dumps({"day": day, "tips": {l: t for l, t in tips.items() if t}})})
             time.sleep(1)
     except KeyboardInterrupt:
         pass
