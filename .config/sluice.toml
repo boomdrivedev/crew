@@ -14,6 +14,13 @@ runner = "moon"
 [executor]
 kind = "open"
 
+# The one signer whose runs crew's gates count (sluice's clauses 78 and 79): deneb, where crew's sessions run and submit,
+# signing as sessions with its own key, as sluice's own policy names it. Naming a signer keeps every branch with a remote
+# on it, its state there beside the branch, so the host that keeps main on origin takes main's pull requests in (sluice's
+# clause 137; sluice record 0125, D22, which from v0.97.0 refuses a branch with a pull request table and no signer).
+[signers.sessions]
+ssh = "deneb ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHGx/Ip3yodP/Rg3DdMAjJXoYuBmMxTLpPrka3ei69M/ sluice deneb"
+
 # A bolt lives on GitHub (plan.19): sluice makes it there at `crew bolt give` and deletes it at `crew bolt land`, every
 # round fetches it from origin and forms on it, and a landing is a push leased on where the round found it, so a
 # submission to a bolt GitHub lacks is refused. A bolt made before stays on its host until the merge that brings it this
@@ -27,7 +34,7 @@ remote = "origin"
 required = ["#check-full"]
 flaky = "fail"
 timeout = "20m"
-trust = ["open"]
+trust = ["sessions"]
 
 # main lives on GitHub (swancloud ADR 0027): every round fetches it from origin and forms on it, and a landing is a push
 # leased on where the round found it, as the host's [forge] app, the ruleset's only bypass. Ops's landing,
@@ -38,7 +45,7 @@ remote = "origin"
 required = ["#check-full"]
 flaky = "fail"
 timeout = "20m"
-trust = ["open"]
+trust = ["sessions"]
 
 # teamless/deneb is crew without teams, which deneb runs while the box keeps crew's release (record 0047 move 5;
 # swancloud record 0044). Until the refactor is confirmed and goes back into main, crew's own work lands here alone,
@@ -48,7 +55,7 @@ remote = "origin"
 required = ["#check-full"]
 flaky = "fail"
 timeout = "20m"
-trust = ["open"]
+trust = ["sessions"]
 
 [branches.main.pull_requests]
 reviews = 0

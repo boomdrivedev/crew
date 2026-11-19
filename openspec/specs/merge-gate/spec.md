@@ -6,11 +6,11 @@ Every merge into a bolt and every landing on main is a submission sluice tests o
 ## Requirements
 
 ### Requirement: crew's own policy gates its bolts and main on its whole suite
-crew's `.config/sluice.toml` SHALL require the `check-full` tasks of every `bolt/*` branch and of `main`, run open on the host, and SHALL accept no replayed task for either, so every submission runs every test afresh. The live test SHALL be no task.
+crew's `.config/sluice.toml` SHALL require the `check-full` tasks of every `bolt/*` branch and of `main`, run open on the host, and SHALL accept no replayed task for either, so every submission runs every test afresh. It SHALL name one signer, `sessions`, by deneb's key, and every branch it names SHALL trust that signer alone, so its gates count the runs deneb signs and main's pull requests are taken in. The live test SHALL be no task.
 
 #### Scenario: crew's policy
 - **WHEN** crew's `.config/sluice.toml` is read
-- **THEN** `[branches."bolt/*"]` and `[branches.main]` each require `#check-full` and trust `open` alone, and its executor is `open`
+- **THEN** `[branches."bolt/*"]` and `[branches.main]` each require `#check-full`, its executor is `open`, `[signers.sessions]` names deneb's key, and every branch it names trusts `sessions` alone
 
 ### Requirement: A bolt's verification is its work's landing, or sluice's passed landing, at its head
 A bolt's verification SHALL be green when its head, read where the bolt lives, is the commit at which one of its units, chores or fixes reads merged or landed as the runner reports it, or else a landing sluice made on the bolt beyond main whose one `Sluice-Result` reads passed, whoever submitted it; unknown with no head, or with that commit's trailers unread; else none. Its words SHALL name the head and the work or sluice's landing. crew SHALL run no sluice command for it.
