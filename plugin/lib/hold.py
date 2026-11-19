@@ -144,17 +144,27 @@ def roles_of(a):
     return [r for r, *_ in a.lines("panes") if r in a.standing or r == "reviewer"]
 
 
+# What this process has read of each session's background work, by the session's id (transcript.Background), so a
+# wait that looks again reads only what the session wrote since its last look.
+FOLLOWED = {}
+
+
 def own_work(info):
     """The background work an agent started that is not one of crew's waits: (its commands, what crew could not
-    read), from its session's transcript (plan.background)."""
-    pending, _, unread = plan.background(info or {})
-    if unread:
-        return None, unread
-    if not pending:
-        return [], None
-    sid = info["agent_session"]["value"]
-    commands = transcript.started_commands(transcript.find(sid)) or {}
-    return [commands.get(t) for t in pending if not crew_wait(commands.get(t))], None
+    read), from the transcript of the session herdr names for it, read as it grows (FOLLOWED)."""
+    sess = (info or {}).get("agent_session")
+    sid = sess.get("value") if isinstance(sess, dict) else None
+    if not isinstance(sid, str) or not sid:
+        return None, "herdr names no session for it"
+    if sid not in FOLLOWED:
+        path = transcript.find(sid)
+        if path is None:
+            return None, f"no transcript for its session {sid}"
+        FOLLOWED[sid] = transcript.Background(path)
+    got = FOLLOWED[sid].look()
+    if isinstance(got, str):
+        return None, got
+    return [c for c in got.values() if not crew_wait(c)], None
 
 
 def labels_here(fleet):
@@ -369,7 +379,9 @@ def holding(fleet, name):
 def renew(fleet, a):
     """crew _renew <agent>: an agent an update made due (crew.due_of) restarted on crew as it now is, once herdr reads
     it idle with no question open and no background work of its own but crew's waits (renew_ready), within a.wait
-    seconds, with its conversation; greeted when it had none to pick up, else told what changed, and recorded. One process at a time per agent; nothing while the host is held. It ends with the agent
+    seconds, with its conversation; greeted when it had none to pick up, else told what changed, and recorded. One process at a time per agent; nothing while the host is held. Whether it is due is
+    judged at the first look, and again only once crew's record of its start moves (crew.start_mark); each look reads
+    only herdr's reading of it, its question mark and the lines its transcript gained (own_work). It ends with the agent
     running: one still up when its stop gives up is watched for EXITING looks and started the moment it goes, or left
     as it was, still due, when it never does, with a mark naming the session its exit was typed into; and one a later
     restart finds those keys ended (renew_exited) is started with no stop. A main level's agent whose role now runs as
@@ -388,14 +400,17 @@ def renew(fleet, a):
     deadline = time.monotonic() + a.wait
     gone = False  # an earlier restart's keys ended it, so it is started with no stop
     now = crew.installed()  # the crew the host has installed, which the agent is restarted on
+    started = mark = why = None  # its start, judged at the first look and again only once its record moves (crew.start_mark)
     while True:
         if crew.held():
             print(f"{host} is held; crew go {host} hands {name} what it is due")
             return
-        due, why, started = crew.due_of(fleet, name, now=now)
-        if not due:
-            print(f"{name} is not due a restart" + (f": {why}" if why else ""))
-            return
+        if mark is None or crew.start_mark(started) != mark:  # its brief and the plan are read here, never at each look
+            due, why, started = crew.due_of(fleet, name, now=now)
+            if not due:
+                print(f"{name} is not due a restart" + (f": {why}" if why else ""))
+                return
+            mark = crew.start_mark(started)
         status, asking, unread = crew.waits_on_question(fleet, name)
         if status is None and not unread and why == crew.KIND_SAID:
             print(f"{name} is not up, so nothing of it is left to end: {why}")

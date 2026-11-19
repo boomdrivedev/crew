@@ -1,5 +1,5 @@
 """What crew reads of a Claude Code transcript, on transcripts written as Claude Code writes them: what an agent's own
-transcript says it still waits on (teams.4), transcript.pending and last_at, and whether its turn is over,
+transcript says it still waits on, read as it grows (teams.19), transcript.Background, and whether its turn is over,
 transcript.turn_over; a signal's excerpt checked and graded
 (signals.2, signals.5), transcript.check; and whether a session received a prompt crew sent (teams.15),
 transcript.end and received. A file read is no process, so these are logic cases; that crew pipes transcript.py to
@@ -28,20 +28,54 @@ TOLD = {"type": "queue-operation", "timestamp": LONG_AGO, "operation": "enqueue"
 
 
 def test_a_background_task_started_and_not_told_over_is_pending(tmp_path):
-    assert transcript.pending(write(tmp_path, *STARTED)) == ["b8y1gomwj"]
+    assert transcript.Background(write(tmp_path, *STARTED)).look() == {"b8y1gomwj": None}
 
 
 def test_a_task_notification_naming_it_ends_it(tmp_path):
-    assert transcript.pending(write(tmp_path, *STARTED, TOLD)) == []
+    assert transcript.Background(write(tmp_path, *STARTED, TOLD)).look() == {}
 
 
-def test_the_last_record_is_when_the_session_last_wrote(tmp_path):
-    assert transcript.last_at(write(tmp_path, *STARTED, TOLD)).isoformat() == "2026-10-12T09:30:00+00:00"
+def test_a_missing_transcript_is_unread_never_an_empty_answer(tmp_path):
+    assert transcript.Background(tmp_path / "gone.jsonl").look().startswith(f"the transcript {tmp_path / 'gone.jsonl'} can't be read: ")
 
 
-def test_a_missing_transcript_is_none_never_an_empty_list(tmp_path):
-    assert transcript.pending(tmp_path / "gone.jsonl") is None
-    assert transcript.last_at(tmp_path / "gone.jsonl") is None
+def append(path, *records, end="\n"):
+    """Records written on at the transcript's end, the last ending with end: "" for one Claude Code is still writing."""
+    with open(path, "a") as f:
+        f.write("".join(json.dumps(r) + "\n" for r in records[:-1]) + json.dumps(records[-1]) + end)
+
+
+def test_each_look_reads_only_what_the_session_wrote_since_the_last(tmp_path):
+    """host-holds-and-updates "A restart's wait reads only what its readiness needs": a line read is never read again,
+    and a line Claude Code is still writing is read once it is whole."""
+    path = write(tmp_path, *STARTED)
+    bg = transcript.Background(path)
+    assert bg.look() == {"b8y1gomwj": None}
+    read = bg.at
+    assert read == path.stat().st_size
+    append(path, TOLD, end="")
+    assert bg.look() == {"b8y1gomwj": None} and bg.at == read
+    with open(path, "a") as f:
+        f.write("\n")
+    assert bg.look() == {} and bg.at == path.stat().st_size
+
+
+def test_a_line_naming_a_task_that_is_not_json_stays_unread(tmp_path):
+    path = write(tmp_path, *STARTED)
+    with open(path, "a") as f:
+        f.write('{"toolUseResult": {"backgroundTaskId": "b2"\n')
+    bg = transcript.Background(path)
+    assert bg.look() == f"the transcript {path} is not JSON lines"
+    append(path, TOLD)
+    assert bg.look() == f"the transcript {path} is not JSON lines"
+
+
+def test_a_transcript_written_anew_is_read_from_its_start(tmp_path):
+    path = write(tmp_path, *STARTED, TOLD)
+    bg = transcript.Background(path)
+    assert bg.look() == {}
+    path.write_text(json.dumps(STARTED[1]) + "\n")
+    assert bg.look() == {"b8y1gomwj": None}
 
 
 # Whether the session's turn is over (record 0007): its last message the model's, ending its turn, as Claude Code

@@ -33,13 +33,15 @@ session's, such as the one before a /clear, and is not searched.
   refused     the transcript is the live session's, and the excerpt is nowhere in it but in crew signal commands, in
               what the agent wrote itself, or Claude Code's copies of what it sent the model: a paraphrase
 
-A wait on a stage reads the same transcript for the work the agent started in the background and is still waiting on
-(pending), and for when the session last wrote (last_at). It knows two more facts of the format, read from Claude Code
+A restart's wait, and a hold's, read the same transcript for the work the agent started in the background and is still
+waiting on, with each task's command (Background). They know two more facts of the format, read from Claude Code
 2.1.286's transcript of session f9b10eee-83e1-4c51-991f-820f7a2fe367, a coder that ran suites in the background on
 2026-10-08: a Bash call run in the background is answered by a record whose toolUseResult holds
 "backgroundTaskId": "<id>"; and when that work ends, the session receives a string holding <task-notification> with
 <task-id><id></task-id> in it, recorded as a queue-operation and again as an attachment. When these stop holding, a
-quiet agent waiting on its own work reads as waiting on nothing, and is reported stuck sooner; never as finished.
+quiet agent waiting on its own work reads as waiting on nothing; never as finished. Background parses only the lines
+holding those words as Claude Code writes them, unescaped, which its answers on the forty largest transcripts on deneb
+on 2026-11-19 matched those of a parse of every line.
 
 It reads there too whether the session's turn is over (turn_over), by two facts read from Claude Code 2.1.307's
 transcripts of 80 sessions on deneb of 2026-10-22 and 23: every record the model writes, of type assistant, carries
@@ -64,7 +66,7 @@ whose message.content is the text as sent, crew's mark included; a slash command
 works is recorded at once as {"type": "queue-operation", "operation": "enqueue", "content": "<text>"}, then as a user
 record when Claude submits it. When these stop holding, no prompt reads as received: crew sends each twice and reports
 its stage as never started, loudly, never as a stage that began."""
-import datetime, json, pathlib, re, sys
+import datetime, json, os, pathlib, re, sys
 
 # A crew signal command line that carries an excerpt, the agent's own or an echo of it: from `crew signal` to the end of
 # its line, a backslash-newline running it on, when a word after it starts --excerpt.
@@ -281,56 +283,95 @@ def check(session, excerpt, skip=(), want=None):
     return Verdict("refused")
 
 
-def pending(path):
-    """The background work the session started and has not been told is over: the ids of every toolUseResult's
-    backgroundTaskId with no <task-id> naming it in a string holding <task-notification>, in the order started. None,
-    never an empty list, when the transcript is missing or can't be read."""
-    found = lines(path) if path else None
-    if found is None or isinstance(found, str):
-        return None
-    started, told = [], set()
-    for _, _, v in found:
+class Background:
+    """The background work one session started and has not been told is over, each task with its command, read from
+    the session's transcript as Claude Code appends to it, for a wait that looks again and again (host-holds-and-updates
+    "A restart's wait reads only what its readiness needs"). A task is a toolUseResult's backgroundTaskId; it is over
+    once a string holding <task-notification> names it in <task-id>; its command is the Bash call's whose id its
+    tool_result's tool_use_id names, None when crew finds no such call or it ran no command. Each look reads only the
+    complete lines written since the last, parses only those holding MARKS, and finds a task's command once, so a look
+    at a long session costs a read of what it wrote since."""
+
+    # The bytes a line holds when it starts a background task or tells of one's end. Claude Code writes each line
+    # with JSON.stringify, which escapes no letter or dash, so a line whose strings or keys hold either holds it as is.
+    MARKS = (b"backgroundTaskId", b"task-notification")
+
+    def __init__(self, path):
+        self.path, self.at = path, 0
+        self.started = {}  # each task's id, in the order started: the tool_use ids its line's tool_results name
+        self.told, self.commands = set(), {}
+
+    def look(self):
+        """{each task started and not told over: its command, or None}, in the order started; or why the transcript
+        can't be read. A line that holds a mark and is not JSON is read again at every look, so it stays unread."""
+        try:
+            with open(self.path, "rb") as f:
+                if os.fstat(f.fileno()).st_size < self.at:  # written anew, shorter: read from its start
+                    self.__init__(self.path)
+                f.seek(self.at)
+                for raw in f:
+                    if not raw.endswith(b"\n"):  # a line Claude Code is still writing
+                        break
+                    if any(m in raw for m in self.MARKS) and not self.read(raw):
+                        return f"the transcript {self.path} is not JSON lines"
+                    self.at += len(raw)
+        except OSError as e:
+            return f"the transcript {self.path} can't be read: {e.strerror or e}"
+        pending = [t for t in self.started if t not in self.told]
+        unfound = [t for t in pending if t not in self.commands]
+        if unfound:
+            calls = self.calls({u for t in unfound for u in self.started[t]})
+            if isinstance(calls, str):
+                return calls
+            for t in unfound:
+                self.commands[t] = next((calls[u] for u in self.started[t] if u in calls), None)
+        return {t: self.commands[t] for t in pending}
+
+    def read(self, raw):
+        """A line holding a mark taken in: the task it starts, the tasks it tells are over. False when it is not JSON."""
+        try:
+            v = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            return False
         r = v.get("toolUseResult") if isinstance(v, dict) else None
         tid = r.get("backgroundTaskId") if isinstance(r, dict) else None
-        if isinstance(tid, str) and tid and tid not in started:
-            started.append(tid)
+        if isinstance(tid, str) and tid and tid not in self.started:
+            m = v.get("message")
+            content = m.get("content") if isinstance(m, dict) else None
+            self.started[tid] = [c["tool_use_id"] for c in (content if isinstance(content, list) else [])
+                                 if isinstance(c, dict) and c.get("type") == "tool_result" and isinstance(c.get("tool_use_id"), str)]
         for x in strings(v):
             if NOTICE in x:
-                told.update(TASK_ID.findall(x))
-    return [t for t in started if t not in told]
+                self.told.update(TASK_ID.findall(x))
+        return True
 
-
-def started_commands(path):
-    """The command of each background task the session started, by the task's id: the Bash call's command whose result
-    names the task (toolUseResult's backgroundTaskId, its tool_result's tool_use_id the call's id), None for a task whose
-    call can't be found or ran no command. None, never an empty dict, when the transcript is missing or can't be read."""
-    found = lines(path) if path else None
-    if found is None or isinstance(found, str):
-        return None
-    calls, out = {}, {}
-    for _, _, v in found:
-        content = (v.get("message") or {}).get("content") if isinstance(v, dict) and isinstance(v.get("message"), dict) else None
-        for c in content if isinstance(content, list) else []:
-            if isinstance(c, dict) and c.get("type") == "tool_use" and isinstance(c.get("id"), str):
-                command = (c.get("input") or {}).get("command") if isinstance(c.get("input"), dict) else None
-                calls[c["id"]] = command if isinstance(command, str) else None
-        r = v.get("toolUseResult") if isinstance(v, dict) else None
-        tid = r.get("backgroundTaskId") if isinstance(r, dict) else None
-        if not (isinstance(tid, str) and tid):
-            continue
-        used = [c.get("tool_use_id") for c in (content if isinstance(content, list) else [])
-                if isinstance(c, dict) and c.get("type") == "tool_result"]
-        out[tid] = next((calls.get(u) for u in used if u in calls), None)
-    return out
-
-def last_at(path):
-    """When the session last wrote its transcript: the newest timestamp of any of its records, as a UTC time. None when
-    the transcript is missing or can't be read, or no record carries a time crew can read."""
-    found = lines(path) if path else None
-    if found is None or isinstance(found, str):
-        return None
-    times = [t for t in (stamp(v.get("timestamp")) for _, _, v in found if isinstance(v, dict)) if t]
-    return max(times) if times else None
+    def calls(self, ids):
+        """The command of each tool call of ids in the lines read so far, by its id, None for one that ran no command,
+        the lines that name none of them left unparsed; or why the transcript can't be read."""
+        needles = [json.dumps(u).encode() for u in ids]
+        out, at = {}, 0
+        try:
+            with open(self.path, "rb") as f:
+                for raw in f:
+                    at += len(raw)
+                    if at > self.at or len(out) == len(ids):
+                        break
+                    if not any(n in raw for n in needles):
+                        continue
+                    try:
+                        v = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, ValueError):
+                        continue
+                    m = v.get("message") if isinstance(v, dict) else None
+                    content = m.get("content") if isinstance(m, dict) else None
+                    for c in content if isinstance(content, list) else []:
+                        if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("id") in ids:
+                            given = c.get("input")
+                            command = given.get("command") if isinstance(given, dict) else None
+                            out[c["id"]] = command if isinstance(command, str) else None
+        except OSError as e:
+            return f"the transcript {self.path} can't be read: {e.strerror or e}"
+        return out
 
 
 def unnamed(session):
