@@ -6,7 +6,7 @@ decision-makers: the user (a proven bolt lands on proof unless marked to stay); 
 
 # 0067. A proven bolt lands on proof, unless it is marked to stay
 
-Status: accepted by the user on 2026-11-12, on their card. Amended on 2026-11-14 by boomdrive-design, below: a proven bolt that waits on the user waits under words naming what for, and never reads as stalled. Amended on 2026-11-19 by boomdrive-design: work is merged only once its place says so, and a land the merge queue turned away is sent again.
+Status: accepted by the user on 2026-11-12, on their card. Amended on 2026-11-14 by boomdrive-design, below: a proven bolt that waits on the user waits under words naming what for, and never reads as stalled. Amended on 2026-11-19 by boomdrive-design: work is merged only once its place says so, and a land the merge queue turned away is sent again. Amended again on 2026-11-19 by boomdrive-design: a fix of main lands on proof, as a proven bolt does.
 
 Deciders: the user, on wldn's card `req_be80263b` on 2026-11-12, relayed by wldn-planner through agentplot-operator: "I think, yes, we could make this change because 99% of the time that's what we want. I think we want to send an upstream request to Crew as a new feature, though, because I think a bolt should be marked (or maybe it's on an upstream Crew feature). I don't know. I'm going to say a bolt. There might be some bolts that we want to stick around for a while because we are working on that bolt, testing it in a test environment, and adding new stuff even after it's "done." We're just adding new feedback. I think that's an explicit decision, though: we would assign it to the bolt ahead of time so we knew. In those cases they don't land automatically but for all the other ones they would". agentplot-design for the record, and for the choices marked as its own.
 
@@ -84,3 +84,24 @@ A land's `done` says the runner made Flume's retry, and nothing more. Whether th
 ### Consequences
 
 - A crew unit reads merged only from the place's status, keeps the work and its row until then, and posts the land again within the backoff, citing this amendment and record 0056.
+
+## Amendment, 2026-11-19: a fix of main lands on proof, as a proven bolt does
+
+Status: decided on 2026-11-19 by boomdrive-design, reading the user's decision above, which the user restated that day on boomdrive-design's card asking whether a fix that only moves a tool's version may land without their send: every landing lands without the send, unless it is a bolt marked ahead of time to stay. Nothing in it is a new choice of the user's.
+
+Deciders: the user's decision above; boomdrive-design for this reading.
+
+Sources: the decision above; `plan.16`; `briefs.11`; the bolt-plan spec's "A fix names its bolt, and a fix of main its kit alone", where a fix of main is shown on its kit's landings row and lands on the user's send.
+
+- **A fix of main lands on proof.** A fix of a kit's main has no bolt, so it is never marked to stay. Once it is proven, crew posts its `land` itself, at once, at any hour, as it does a proven bolt's. Proven means its last stage delivered and its forecast clear of what main has landed. A fix has no unit, so no batch holds it. Whatever kind of fix it is, a tool's new version or anything else, it lands the same way.
+- **The landings card tells of it.** A fix of main that landed on proof reaches the user as a heads-up on its kit's landings card, as a bolt's does. The card still asks only about marked bolts.
+- **What holds a bolt holds a fix.** A hold the user put on the drive or the kit stops a fix's `land` as it stops a bolt's, and a fix's land the merge queue turned away is sent again as the amendment above says.
+
+### Not taken
+
+- **A send for some kinds of fix**, such as one that only moves a tool's version: the one exception to landing on proof is a bolt marked ahead of time.
+
+### Consequences
+
+- `plan.16` and `briefs.11` name a fix of main beside a proven bolt.
+- A crew unit makes a fix of main post its land on proof, and its row on the landings card a heads-up.
