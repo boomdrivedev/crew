@@ -47,10 +47,32 @@ let
       export PROTO_HOME="$_crew_common/proto" MOON_HOME="$_crew_common/moon-home"
     fi
   '';
+  # OpenSpec at the family's release, as sluice, flume, boomdrive, timber, weir and boom pin it, built as nixpkgs builds
+  # its older one: the release t-specs validates crew's specs with and t-stage-facts holds gather.py's reading of a
+  # change's tasks and planning to, so a host's own openspec, whatever its release, decides neither. Bump the version,
+  # then each hash from the mismatch the build reports, then gather.py's reading to the new release's rules.
+  openspecVersion = "1.14.3";
+  openspec = pkgs.openspec.overrideAttrs (
+    finalAttrs: _: {
+      version = openspecVersion;
+      src = pkgs.fetchFromGitHub {
+        owner = "Fission-AI";
+        repo = "OpenSpec";
+        tag = "v${finalAttrs.version}";
+        hash = "sha256-tdTX0nkDe/aNZgLckh6/B6BtoSb40w0Y5qzg+d1LjHU=";
+      };
+      pnpmDeps = pkgs.fetchPnpmDeps {
+        inherit (finalAttrs) pname version src;
+        pnpm = pkgs.pnpm_10;
+        fetcherVersion = 3;
+        hash = "sha256-fKm4sBdTDeQfIiE0k301jtRbiuJrBE7YIEBu8RZxuXI=";
+      };
+    }
+  );
 in
 {
-  # The system tools crew's own scripts call. herdr, wt and openspec come from the machine and from each team's
-  # repository. recutils (recsel, recfix) reads and checks the bolt plan. proto installs and activates the
+  # The system tools crew's own scripts call. herdr and wt come from the machine and from each team's repository.
+  # openspec is the family's release, pinned above. recutils (recsel, recfix) reads and checks the bolt plan. proto installs and activates the
   # application tools .prototools pins: moon, which runs crew's suite as tasks in parallel and replays a task whose
   # inputs already passed (tests/suite, .moon/workspace.yml; record 0008), and Python, at the minor every host runs
   # crew on, with uv. pytest runs the logic and contract tiers (record 0022), synced by moon from tests/pyproject.toml
@@ -58,7 +80,7 @@ in
   # releases from its conventional commits (cliff.toml, code.10). nix, nixfmt, statix and deadnix are the flake's
   # checks', the moon project nix (nix/moon.yml): the nix its type check and test evaluate with, nixfmt its format
   # runs, statix and deadnix its lint (flake.3), from this shell's own nixpkgs, pinned by devenv.lock.
-  packages = [ pkgs.jq proto pkgs.recutils pkgs.git-cliff pkgs.nix pkgs.nixfmt pkgs.statix pkgs.deadnix ];
+  packages = [ pkgs.jq proto openspec pkgs.recutils pkgs.git-cliff pkgs.nix pkgs.nixfmt pkgs.statix pkgs.deadnix ];
 
   # The flake's inputs as flake.lock locks them, fetched by this shell and given to the flake's checks by their store
   # paths, which nix/check.sh reads with no network and no nix daemon (flake.3, nix/inputs.nix).
