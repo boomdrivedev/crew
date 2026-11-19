@@ -4,9 +4,10 @@
 # Decision 3); a unit's and a fix's place on a started bolt merge into it only as Flume's submissions to sluice, crew
 # fix having no --merge since crew merges nothing, and crew reads each merged from the runner's records and the bolt's
 # verification from the runner's report of its work's landing at its head (crew record 0056 points 1 and 4); and crew's
-# own policy requires its check-full tasks of a bolt and of main, run open on the host and taking no replay (tests.5,
-# tests.10). Each scenario of the bolt-teams spec on merging; which table and checks a policy names for a bolt branch
-# is a logic case (tests/py/test_kit.py).
+# own policy requires its check-full tasks of a bolt and of main, run open on the host and taking no replay, and counts
+# on every branch the runs of its one signer, deneb as sessions (tests.5, tests.10; sluice record 0125, D22). Each
+# scenario of the bolt-teams spec on merging; which table and checks a policy names for a bolt branch is a logic case
+# (tests/py/test_kit.py).
 # Reads: .config/sluice.toml
 . "${TESTS:?run crew tests through tests/run, which puts stub herdr, ssh and claude first}/lib.sh" || exit 2
 bolt_world
@@ -61,6 +62,7 @@ ok "a unit's and a fix's merge into a started bolt is Flume's submission to slui
 
 policy() { python3 -c 'import sys, tomllib; sys.path.insert(0, sys.argv[1]); import kit
 text = open(sys.argv[2]).read(); b = tomllib.loads(text)["branches"]
-print(tomllib.loads(text)["executor"]["kind"], kit.bolt_checks(text, "crew"), b["main"]["required"], b["bolt/*"]["trust"], b["main"]["trust"])' "$CREW/plugin/lib" "$CREW/.config/sluice.toml"; }
-eq "$(policy)" "open ['#check-full'] ['#check-full'] ['open'] ['open']"
-ok "crew's own policy requires its check-full tasks of a bolt and of main, run open on the host, and takes no replay"
+p = tomllib.loads(text); s = p["signers"]
+print(p["executor"]["kind"], kit.bolt_checks(text, "crew"), b["main"]["required"], sorted(s), s["sessions"]["ssh"].split()[0], sorted(set(map(tuple, (t["trust"] for t in b.values())))))' "$CREW/plugin/lib" "$CREW/.config/sluice.toml"; }
+eq "$(policy)" "open ['#check-full'] ['#check-full'] ['sessions'] deneb [('sessions',)]"
+ok "crew's own policy requires its check-full tasks of a bolt and of main, run open on the host, counting the runs deneb signs as sessions alone on every branch, and takes no replay"
