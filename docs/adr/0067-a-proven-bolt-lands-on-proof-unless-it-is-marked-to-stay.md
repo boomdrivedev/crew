@@ -6,7 +6,7 @@ decision-makers: the user (a proven bolt lands on proof unless marked to stay); 
 
 # 0067. A proven bolt lands on proof, unless it is marked to stay
 
-Status: accepted by the user on 2026-11-12, on their card. Amended on 2026-11-14 by boomdrive-design, below: a proven bolt that waits on the user waits under words naming what for, and never reads as stalled.
+Status: accepted by the user on 2026-11-12, on their card. Amended on 2026-11-14 by boomdrive-design, below: a proven bolt that waits on the user waits under words naming what for, and never reads as stalled. Amended on 2026-11-19 by boomdrive-design: work is merged only once its place says so, and a land the merge queue turned away is sent again. Amended again on 2026-11-19 by boomdrive-design: a fix of main lands on proof, as a proven bolt does.
 
 Deciders: the user, on wldn's card `req_be80263b` on 2026-11-12, relayed by wldn-planner through agentplot-operator: "I think, yes, we could make this change because 99% of the time that's what we want. I think we want to send an upstream request to Crew as a new feature, though, because I think a bolt should be marked (or maybe it's on an upstream Crew feature). I don't know. I'm going to say a bolt. There might be some bolts that we want to stick around for a while because we are working on that bolt, testing it in a test environment, and adding new stuff even after it's "done." We're just adding new feedback. I think that's an explicit decision, though: we would assign it to the bolt ahead of time so we knew. In those cases they don't land automatically but for all the other ones they would". agentplot-design for the record, and for the choices marked as its own.
 
@@ -57,3 +57,51 @@ Sources: signal `2026-11-14-boomdrive-ops-f85c2fe2/01` on afterthought/crew-stat
 
 - Boomdrive's runner takes `hold` as a message of its control plane and carries it as Flume's hold of a place's waiting move, with the words and bound given. That is a Boomdrive unit, built first.
 - A crew unit gives each proven bolt that waits on the user its words, and the next words or none when the wait changes, citing this amendment, clause 130 and record 0056.
+
+## Amendment, 2026-11-19: work is merged only once its place says so, and a land the merge queue turned away is sent again
+
+Status: decided on 2026-11-19 by boomdrive-design, on signal `2026-11-19-boomdrive-ops-ef02bb34/01-a-refused-land-is-read-as-done`. Nothing in it is the user's alone: the user's send, or a bolt's proof, already said the work is to land, and each choice is cheap to change.
+
+### Context
+
+The user sent timber's fix of main `sluice-policy-names-its-signers`, and crew posted its `land` (request 2227). The runner carried it out as Boomdrive's rule core.53 says, by Flume's retry of the place's submission, and answered it `done` at 02:52:18Z, as Flume answered. sluice refused that submission, since the Boomdrive App's GitHub allowance was spent. Flume recorded the refusal and put the place back to waiting on its caller for a retry of its submission, with sluice's words. crew read the land's `done` as the work merged, dropped the fix from the plan and raised no card. Its work was on no main, and nothing would ever have sent it again.
+
+A land's `done` says the runner made Flume's retry, and nothing more. Whether the work merged is in Flume's status of its place, which the runner carries.
+
+### Decision outcome
+
+- **Merged means the place says landed.** crew reads a fix of main, a unit or a bolt as merged only where Flume's status of its place, as the runner carries it, says the place landed, with its commit. A land answered `done` ends nothing: the work stays in the plan, and its row stays on its kit's landings card, until its place lands or is dropped.
+- **A send stands until its work merges.** Where the runner's report shows a place whose land was answered `done` waiting again on its caller for a retry of its submission, the user's send, or the bolt's proof, still stands. crew posts the land again without asking anyone. Meanwhile the row says, in the merge queue's words, why the work has not merged.
+- **Never a loop.** crew posts that land again no sooner than a backoff that grows with each refusal of the same head, from the runner's poll interval up to an hour. A refusal that does not pass, such as a policy the merge queue will not take, then costs a call an hour, and its row tells the user why.
+- **Read from the runner alone.** crew judges nothing of the merge queue's words and reads Flume only as the runner carries it (record 0056, point 1).
+
+### Not taken
+
+- **Raise the row again and wait for the user's send.** The user already said the work is to land, and a passing refusal would cost them a second send for nothing.
+- **Have the runner answer a land refused when the submission is refused.** The runner gives each tool's answer as the tool gave it (Boomdrive's core.1 and core.53), and Flume's retry was made.
+- **Send it again at every pass.** A refusal that stands would call the merge queue, and through it GitHub, at every pass.
+
+### Consequences
+
+- A crew unit reads merged only from the place's status, keeps the work and its row until then, and posts the land again within the backoff, citing this amendment and record 0056.
+
+## Amendment, 2026-11-19: a fix of main lands on proof, as a proven bolt does
+
+Status: decided on 2026-11-19 by boomdrive-design, reading the user's decision above, which the user restated that day on boomdrive-design's card asking whether a fix that only moves a tool's version may land without their send: every landing lands without the send, unless it is a bolt marked ahead of time to stay. Nothing in it is a new choice of the user's.
+
+Deciders: the user's decision above; boomdrive-design for this reading.
+
+Sources: the decision above; `plan.16`; `briefs.11`; the bolt-plan spec's "A fix names its bolt, and a fix of main its kit alone", where a fix of main is shown on its kit's landings row and lands on the user's send.
+
+- **A fix of main lands on proof.** A fix of a kit's main has no bolt, so it is never marked to stay. Once it is proven, crew posts its `land` itself, at once, at any hour, as it does a proven bolt's. Proven means its last stage delivered and its forecast clear of what main has landed. A fix has no unit, so no batch holds it. Whatever kind of fix it is, a tool's new version or anything else, it lands the same way.
+- **The landings card tells of it.** A fix of main that landed on proof reaches the user as a heads-up on its kit's landings card, as a bolt's does. The card still asks only about marked bolts.
+- **What holds a bolt holds a fix.** A hold the user put on the drive or the kit stops a fix's `land` as it stops a bolt's, and a fix's land the merge queue turned away is sent again as the amendment above says.
+
+### Not taken
+
+- **A send for some kinds of fix**, such as one that only moves a tool's version: the one exception to landing on proof is a bolt marked ahead of time.
+
+### Consequences
+
+- `plan.16` and `briefs.11` name a fix of main beside a proven bolt.
+- A crew unit makes a fix of main post its land on proof, and its row on the landings card a heads-up.
