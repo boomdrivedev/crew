@@ -2868,22 +2868,57 @@ def starts():
     commit and version of crew it loaded and the digest of the launch it was started with, each None when the start did
     not record it, as one before crew kept them."""
     found = {}
-    for p in (SESSIONS.iterdir() if SESSIONS.is_dir() else []):
-        try:
-            kv = dict(l.split("=", 1) for l in p.read_text().splitlines() if "=" in l)
-            at = p.stat().st_mtime
-        except OSError:
-            continue
-        name = kv.get("CREW_AGENT")
-        if name and (name not in found or (at, p.name) > found[name][0]):
-            found[name] = ((at, p.name), {"session": p.name, "commit": kv.get("CREW_COMMIT") or None,
-                                          "version": kv.get("CREW_VERSION") or None, "launch": kv.get("CREW_LAUNCH") or None})
+    for at, p in dated_starts():
+        name, s = start_read(p)
+        if name and (name not in found or at > found[name][0]):
+            found[name] = (at, s)
     return {name: s for name, (_, s) in found.items()}
 
 
+def dated_starts():
+    """Each record of a session's start on this host, by its file's time and name, newest first; a record crew can't
+    stat passed over, as one gone since the folder was listed."""
+    out = []
+    for p in (SESSIONS.iterdir() if SESSIONS.is_dir() else []):
+        try:
+            out.append(((p.stat().st_mtime, p.name), p))
+        except OSError:
+            continue
+    return sorted(out, reverse=True)
+
+
+def start_read(p):
+    """A start's record read: (the agent it names, None when none, and what it recorded, starts' value for it); (None,
+    None) when crew can't read it."""
+    try:
+        kv = dict(l.split("=", 1) for l in p.read_text().splitlines() if "=" in l)
+    except OSError:
+        return None, None
+    return kv.get("CREW_AGENT") or None, {"session": p.name, "commit": kv.get("CREW_COMMIT") or None,
+                                          "version": kv.get("CREW_VERSION") or None, "launch": kv.get("CREW_LAUNCH") or None}
+
+
 def start_of(name):
-    """What an agent's last start on this host recorded (starts), or None when it has no record."""
-    return starts().get(name)
+    """What an agent's last start on this host recorded, as starts reads it, or None when it has no record: the records
+    read newest first, and only until one names it, so it costs the records written since its start, never all of
+    them."""
+    for _, p in dated_starts():
+        found, s = start_read(p)
+        if found == name:
+            return s
+    return None
+
+
+def start_mark(started):
+    """What moves when an agent may have started again since its last start, started, was read (start_of), by two stats
+    and no read: the times of crew's records folder, which a new session's record moves, and of started's own record,
+    which a start again in that session rewrites; None for either crew can't stat."""
+    def at(p):
+        try:
+            return p.stat().st_mtime_ns
+        except OSError:
+            return None
+    return at(SESSIONS), at(SESSIONS / started["session"]) if started else None
 
 
 # What the update check says of each reading (update_due, teams.19).

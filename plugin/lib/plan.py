@@ -8743,22 +8743,6 @@ def session_ended(pid):
     return False
 
 
-def background(info):
-    """What an agent's own session says it still waits on: (the background tasks it started and has not been told are
-    over, when its transcript last wrote, None), or (None, None, what crew could not read)."""
-    sess = info.get("agent_session")
-    sid = sess.get("value") if isinstance(sess, dict) else None
-    if not isinstance(sid, str) or not sid:
-        return None, None, "herdr names no session for it"
-    path = transcript.find(sid)
-    if path is None:
-        return None, None, f"no transcript for its session {sid}"
-    pending = transcript.pending(path)
-    if pending is None:
-        return None, None, f"its transcript {path} can't be read"
-    return pending, transcript.last_at(path), None
-
-
 # ------------------------------------------------------------------------------ a team's commands, one process each
 
 def sh(**pairs):

@@ -237,6 +237,34 @@ class TestStarts:
         assert crew.start_of("wldn-design") == {"session": "other", "commit": None, "version": None, "launch": None}
         assert crew.start_of("wldn-planner") is None
 
+    def test_an_agents_start_is_read_from_the_newest_record_only_until_one_names_it(self, tmp_path, monkeypatch):
+        # deneb held 4,830 records on 2026-11-19, which starts read whole in 0.56 CPU seconds for each agent's due.
+        import os
+        monkeypatch.setattr(crew, "SESSIONS", tmp_path)
+        for at, (sid, agent) in enumerate([("a", "wldn-ops"), ("b", "wldn-design"), ("c", "wldn-ops"), ("d", "wldn-planner")], 1):
+            (tmp_path / sid).write_text(f"CREW_AGENT={agent}\n")
+            os.utime(tmp_path / sid, (at, at))
+        read, start_read = [], crew.start_read
+        monkeypatch.setattr(crew, "start_read", lambda p: read.append(p.name) or start_read(p))
+        assert crew.start_of("wldn-ops")["session"] == "c"
+        assert read == ["d", "c"]
+        assert {n: s["session"] for n, s in crew.starts().items()} == {"wldn-ops": "c", "wldn-design": "b", "wldn-planner": "d"}
+
+    def test_a_starts_mark_moves_with_a_new_record_or_its_own_rewritten(self, tmp_path, monkeypatch):
+        import os
+        monkeypatch.setattr(crew, "SESSIONS", tmp_path)
+        (tmp_path / "sid-1").write_text("CREW_AGENT=wldn-ops\n")
+        os.utime(tmp_path / "sid-1", (1, 1))
+        os.utime(tmp_path, (1, 1))
+        mark = crew.start_mark(STARTED)
+        assert crew.start_mark(STARTED) == mark and None not in mark
+        os.utime(tmp_path / "sid-1", (2, 2))
+        assert crew.start_mark(STARTED) != mark
+        mark = crew.start_mark(STARTED)
+        (tmp_path / "sid-2").write_text("CREW_AGENT=wldn-ops\n")
+        assert crew.start_mark(STARTED) != mark
+        assert crew.start_mark(dict(STARTED, session="gone"))[1] is None
+
 
 class TestHeld:
     def test_a_host_with_no_hold_file_is_not_held_and_one_crew_cannot_read_is(self, tmp_path, monkeypatch):
@@ -290,6 +318,39 @@ class TestRenew:
         hold.hand("wldn-ops")
         assert ran == [["bash", "/etc/profiles/per-user/chuck/bin/crew", "_renew", "wldn-ops"]]
         assert (tmp_path / "renew/wldn-ops.log").exists()
+
+    def waiting(self, tmp_path, monkeypatch, marks, dues):
+        """crew _renew of wldn-ops, which herdr reads working at every look until its wait of 30 seconds is over: each
+        look's mark of its start's record from marks, the last standing, and each judgment of it from dues. Returns the
+        judgments made and the looks."""
+        clock, judged, looks = [0], [], []
+        monkeypatch.setattr(hold, "RENEW", tmp_path / "renew")
+        monkeypatch.setattr(hold, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+        monkeypatch.setattr(crew, "place_of_agent", lambda fleet, name: ("mac-studio", "wldn-3"))
+        monkeypatch.setattr(crew, "installed", lambda: checkout(C2))
+        monkeypatch.setattr(crew, "held", lambda: None)
+        monkeypatch.setattr(crew, "nap", lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+        monkeypatch.setattr(crew, "due_of", lambda fleet, name, started=None, now=None: judged.append(now) or dues[len(judged) - 1])
+        monkeypatch.setattr(crew, "start_mark", lambda started: marks[min(len(looks), len(marks) - 1)])
+        monkeypatch.setattr(crew, "waits_on_question", lambda fleet, name: looks.append(name) or ("working", False, None))
+        monkeypatch.setattr(crew, "agent_get", lambda fleet, name: {"agent_session": {"value": "sid-1"}})
+        monkeypatch.setattr(hold, "own_work", lambda info: ([], None))
+        hold.renew(FLEET, types.SimpleNamespace(agent="wldn-ops", wait=30))
+        return judged, looks
+
+    def test_a_restarts_wait_judges_whether_its_agent_is_due_once_and_then_reads_only_its_readiness(self, tmp_path, monkeypatch, capsys):
+        # deneb, crew 0.67.1: each look rebuilt the agent's brief and read its whole transcript three times, about 500 MB
+        # and 22 to 24 CPU seconds in the two minutes of boomdrive-planner's and boomdrive-ops's waits.
+        judged, looks = self.waiting(tmp_path, monkeypatch, [("d", "r")], [(True, crew.LAUNCH_SAID, STARTED)])
+        assert judged == [checkout(C2)] and len(looks) == 7
+        assert "wldn-ops is not restarted: it is working; the end of its next turn hands it back" in capsys.readouterr().out
+
+    def test_a_restarts_wait_judges_again_once_its_agents_start_record_moves(self, tmp_path, monkeypatch, capsys):
+        started = dict(STARTED, session="sid-2", commit=C2)
+        judged, looks = self.waiting(tmp_path, monkeypatch, [("d", "r"), ("d", "r"), ("d", "r"), ("d2", "r2")],
+                                     [(True, crew.LAUNCH_SAID, STARTED), (False, None, started)])
+        assert len(judged) == 2 and len(looks) == 3
+        assert "wldn-ops is not due a restart" in capsys.readouterr().out
 
     def test_a_due_agent_is_restarted_only_once_it_is_idle_with_nothing_of_its_own_running(self):
         assert hold.renew_ready("idle", False, None, []) == (True, None)
@@ -468,8 +529,40 @@ class TestTranscript:
                 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "gone"}]}, "toolUseResult": {"backgroundTaskId": "b3"}}]
         path = tmp_path / "s.jsonl"
         path.write_text("".join(json.dumps(r) + "\n" for r in rows))
-        assert transcript.started_commands(path) == {"b1": "crew unit wait u", "b2": "wt submit main", "b3": None}
-        assert transcript.started_commands(tmp_path / "none.jsonl") is None
+        assert transcript.Background(path).look() == {"b1": "crew unit wait u", "b2": "wt submit main", "b3": None}
+
+    def test_a_tasks_command_is_found_once_and_a_task_started_since_is_found_at_the_next_look(self, tmp_path, monkeypatch):
+        rows = [{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "wt submit main"}}]}},
+                {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1"}]}, "toolUseResult": {"backgroundTaskId": "b1"}}]
+        path = tmp_path / "s.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        bg, searched = transcript.Background(path), []
+        calls = transcript.Background.calls
+        monkeypatch.setattr(transcript.Background, "calls", lambda self, ids: searched.append(sorted(ids)) or calls(self, ids))
+        assert bg.look() == {"b1": "wt submit main"}
+        assert bg.look() == {"b1": "wt submit main"}
+        with open(path, "a") as f:
+            f.write(json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "tu2", "name": "Bash", "input": {"command": "crew review wldn --wait"}}]}}) + "\n")
+            f.write(json.dumps({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu2"}]}, "toolUseResult": {"backgroundTaskId": "b2"}}) + "\n")
+        assert bg.look() == {"b1": "wt submit main", "b2": "crew review wldn --wait"}
+        assert searched == [["tu1"], ["tu2"]]
+
+    def test_own_work_follows_each_session_and_says_what_it_cannot_read(self, tmp_path, monkeypatch):
+        rows = [{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {"command": "crew review wldn --wait"}}]}},
+                {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1"}]}, "toolUseResult": {"backgroundTaskId": "b1"}},
+                {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "tu2", "name": "Bash", "input": {"command": "wt submit main"}}]}},
+                {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu2"}]}, "toolUseResult": {"backgroundTaskId": "b2"}}]
+        path = tmp_path / "s.jsonl"
+        path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+        found = []
+        monkeypatch.setattr(hold, "FOLLOWED", {})
+        monkeypatch.setattr(transcript, "find", lambda sid: found.append(sid) or (path if sid == "s" else None))
+        info = {"agent_session": {"value": "s"}}
+        assert hold.own_work(info) == (["wt submit main"], None)
+        assert hold.own_work(info) == (["wt submit main"], None)
+        assert found == ["s"]
+        assert hold.own_work({"agent_session": {"value": "gone"}}) == (None, "no transcript for its session gone")
+        assert hold.own_work({}) == (None, "herdr names no session for it")
 
 
 class TestBands:
