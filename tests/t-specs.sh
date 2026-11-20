@@ -1,5 +1,5 @@
 # crew's specs pass openspec's strict validation (test-suite "crew's specs pass openspec's strict validation"):
-# `openspec validate --specs --strict`, run in crew's checkout by the machine's openspec, which tests/run requires,
+# `openspec validate --specs --strict`, run in crew's checkout by the family's release crew's devenv.nix pins,
 # passes every spec under openspec/specs/, so a requirement past openspec's 500 characters, or one with no SHALL, MUST
 # or scenario, fails the suite at the merge of the change whose archive brought it. It first finds, in scratch specs of
 # its own, a requirement of 501 characters refused and one of 500 taken, so an openspec that checks no length fails
