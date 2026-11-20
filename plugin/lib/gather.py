@@ -257,9 +257,10 @@ def head_at(cwd, ref):
     return (run(["git", "log", "-1", "--format=%cI", ref], cwd) or "").strip() or None
 
 
-# A change's tasks and whether its planning is complete, read from its files by openspec 1.14.1's own rules for its
+# A change's tasks and whether its planning is complete, read from its files by openspec 1.14.3's own rules for its
 # spec-driven schema (dist/utils/task-progress.js, dist/core/artifact-graph, dist/utils/change-metadata.js), so
-# neither needs openspec started. tests/t-stage-facts.sh holds this reading to openspec's on the same worktrees.
+# neither needs openspec started: the family's release, which crew's devenv.nix pins. tests/t-stage-facts.sh holds
+# this reading to that release's on the same worktrees; a bump of the pin moves this reading with it.
 # JavaScript's \s, written out, since Python's differs; JavaScript's `.` stops at a line or paragraph separator.
 SPACE = "\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
 WS = f"[{SPACE}]"

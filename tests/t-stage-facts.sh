@@ -2,8 +2,13 @@
 # treats differently, gather.py's tasks, planning and open tasks are what `openspec list`, `openspec status` and, where
 # it lists them, `openspec instructions apply` say there. A change
 # of openspec's spec-driven workflow is read from its files without starting openspec; one naming another workflow,
-# one in a kit that redefines spec-driven, or one whose metadata crew does not read is read through openspec.
+# one in a kit that redefines spec-driven, or one whose metadata crew does not read is read through openspec. The
+# openspec it compares with is the family's release crew's devenv.nix pins, never a host's own.
 . "${TESTS:?run crew tests through tests/run, which puts stub herdr, ssh and claude first}/lib.sh" || exit 2
+pinned=$(sed -n 's/^  openspecVersion = "\(.*\)";$/\1/p' "$CREW/devenv.nix")
+[[ -n $pinned ]] || fail "devenv.nix pins no openspecVersion"
+eq "$(openspec --version)" "$pinned"
+ok "openspec is the release crew's shell pins, $pinned"
 gitconfig "$HOME"
 export XDG_DATA_HOME=$T/data
 k=$(kit mac-studio work facts); kd=$(dirname "$k")
