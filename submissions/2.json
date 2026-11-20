@@ -1,0 +1,32 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 2,
+  "branch": "main",
+  "head": "195ddd702ec7d98a374e6b94db28fd1b76b21adb",
+  "from": {
+    "agent": "boomdrive-design",
+    "worktree": "pull/333",
+    "head": "design/a-send-stands-until-its-work-merges"
+  },
+  "submitted": "2026-11-19T13:14:12Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "failed",
+  "tested": {
+    "combination": "242e246d8cab793cbee25ccd04b3d52d51beb10c",
+    "on": "5827b6b4255f8e89bf9814e2cbb81e9409d4b108",
+    "submissions": [
+      2
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "tests:t-stage-facts",
+      "hash": "a05b38436106b5dd88d3005bcd5633c52722bd228ae096be7017fb2a56783c96",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/crew/crew.git/sluice-remote/origin/.logs/main/c1/tests:t-stage-facts.log"
+    }
+  ],
+  "subject": "design/a-send-stands-until-its-work-merges"
+}

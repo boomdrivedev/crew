@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 6,
+  "branch": "main",
+  "head": "2af9391bdae0c909c7e32c9c7db33f7da42c0066",
+  "from": {
+    "agent": "fix/main--a-hold-renewal-reads-only-what-it-needs",
+    "worktree": "pull/335",
+    "head": "fix/main--a-hold-renewal-reads-only-what-it-needs"
+  },
+  "submitted": "2026-11-20T21:43:09Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 2,
+  "state": "landed",
+  "tested": {
+    "combination": "3b5a3460094e784f2a53fc720b7ae2d76fc49f10",
+    "on": "ff20453ad4a2f4aaba9bb99d8ecb15493184ee31",
+    "submissions": [
+      6
+    ]
+  },
+  "result": "passed",
+  "landed_as": "43a3911aca0caaff85a313cf43c667517eb62bbb",
+  "subject": "a hold renewal reads only what it needs",
+  "under_test_ms": 301000
+}

@@ -1,0 +1,10 @@
+{"format": "weir-delivery/1", "key": "2:failed", "readers": ["pull/333"], "message": "[sluice] #2 failed on main: tests:t-stage-facts. sluice wait 2 shows why.", "recorded_at": "2026-11-19T15:17:15Z", "expires_at": "2026-11-26T15:17:15Z"}
+{"format": "weir-handover/1", "key": "2:failed", "reader": "pull/333", "by": "pull-request", "at": "2026-11-19T15:18:48Z"}
+{"format": "weir-confirmation/1", "key": "2:failed", "reader": "pull/333", "at": "2026-11-19T15:18:48Z"}
+{"format": "weir-known/1", "reader": "pull/333", "known_at": "2026-11-19T15:18:48Z"}
+{"format": "weir-delivery/1", "key": "3:failed", "readers": ["pull/334"], "message": "[sluice] #3 failed on main: tests:t-stage-facts. sluice wait 3 shows why.", "recorded_at": "2026-11-19T15:30:37Z", "expires_at": "2026-11-26T15:30:37Z"}
+{"format": "weir-handover/1", "key": "3:failed", "reader": "pull/334", "by": "wait", "at": "2026-11-19T15:31:24Z"}
+{"format": "weir-known/1", "reader": "pull/335", "known_at": "2026-11-20T21:35:23Z"}
+{"format": "weir-known/1", "reader": "pull/336", "known_at": "2026-11-20T21:42:31Z"}
+{"format": "weir-delivery/1", "key": "6:landed", "readers": ["pull/335"], "message": "[sluice] #6 landed on main as 43a3911.", "recorded_at": "2026-11-20T21:48:43Z", "expires_at": "2026-11-27T21:48:43Z"}
+{"format": "weir-confirmation/1", "key": "6:landed", "reader": "pull/335", "at": "2026-11-20T21:49:08Z"}

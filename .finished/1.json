@@ -1,0 +1,21 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 1,
+  "branch": "main",
+  "head": "f85a3f68d49db26373fa55be750f39e8306e2be5",
+  "from": {
+    "agent": "boomdrive-design",
+    "worktree": "pull/333",
+    "head": "design/a-send-stands-until-its-work-merges"
+  },
+  "submitted": "2026-11-19T03:57:18Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "withdrawn": {
+    "by": "boomdrive-design",
+    "at": "2026-11-19T13:13:55Z"
+  },
+  "subject": "design/a-send-stands-until-its-work-merges"
+}

@@ -1,0 +1,27 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 5,
+  "branch": "main",
+  "head": "e7b9592524caf3a4ba0e2ca15d63d18133e7f32d",
+  "from": {
+    "agent": "fix/main--stage-facts-match-the-openspec-the-tree-pins",
+    "worktree": "pull/336",
+    "head": "fix/main--stage-facts-match-the-openspec-the-tree-pins"
+  },
+  "submitted": "2026-11-20T21:36:11Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "landed",
+  "tested": {
+    "combination": "8133b8b45e558cfcc9f524a4f6a67160314b6bdd",
+    "on": "5827b6b4255f8e89bf9814e2cbb81e9409d4b108",
+    "submissions": [
+      5
+    ]
+  },
+  "result": "passed",
+  "landed_as": "ff20453ad4a2f4aaba9bb99d8ecb15493184ee31",
+  "subject": "crew's shell pins the family's OpenSpec",
+  "under_test_ms": 352000
+}

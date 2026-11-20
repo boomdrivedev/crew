@@ -1,0 +1,37 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 4,
+  "branch": "main",
+  "head": "8c0dfea6c3cbafdcca0ef6d0234a24b7d7cd65f1",
+  "from": {
+    "agent": "fix/main--a-hold-renewal-reads-only-what-it-needs",
+    "worktree": "pull/335",
+    "head": "fix/main--a-hold-renewal-reads-only-what-it-needs"
+  },
+  "submitted": "2026-11-20T21:33:47Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "withdrawn",
+  "tested": {
+    "combination": "4bb2257d8aa73d21d9bf9f06fbc6d9053527669a",
+    "on": "5827b6b4255f8e89bf9814e2cbb81e9409d4b108",
+    "submissions": [
+      4
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "tests:t-stage-facts",
+      "hash": "c5abf63e4b7ca4dcccba811522823b0ea5ee35068cdf3fb3fa2318431fb0e269",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/crew/crew.git/sluice-remote/origin/.logs/main/c4/tests:t-stage-facts.log"
+    }
+  ],
+  "withdrawn": {
+    "by": "resubmission",
+    "at": "2026-11-20T21:43:09Z"
+  },
+  "subject": "a hold renewal reads only what it needs",
+  "under_test_ms": 53000
+}

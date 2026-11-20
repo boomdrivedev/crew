@@ -1,0 +1,32 @@
+{
+  "schema": "sluice/branch@1",
+  "branch": "main",
+  "log": "sluice/log@1",
+  "base": "43a3911aca0caaff85a313cf43c667517eb62bbb",
+  "verified": true,
+  "covered_by": {
+    "at": "43a3911aca0caaff85a313cf43c667517eb62bbb",
+    "result": "passed",
+    "ran": 34,
+    "replayed": 0
+  },
+  "window": 3,
+  "next_place": 12,
+  "next_candidate": 7,
+  "candidates": [],
+  "landing": null,
+  "release": [],
+  "outbox": [
+    {
+      "id": "6:landed",
+      "submission": 6,
+      "told": {
+        "outcome": "landed",
+        "landed_as": "43a3911aca0caaff85a313cf43c667517eb62bbb"
+      }
+    }
+  ],
+  "lead": "deneb",
+  "landed": "43a3911aca0caaff85a313cf43c667517eb62bbb",
+  "kept": "2026-11-20T21:49:09Z"
+}

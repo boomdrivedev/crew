@@ -1,0 +1,32 @@
+{
+  "schema": "sluice/submission@1",
+  "id": 3,
+  "branch": "main",
+  "head": "8916c3a78e2ebf220f71066af4586ae5c35c522b",
+  "from": {
+    "agent": "boomdrive-design",
+    "worktree": "pull/334",
+    "head": "design/a-bolt-takes-main-in-with-no-agent"
+  },
+  "submitted": "2026-11-19T13:57:32Z",
+  "after": [],
+  "priority": 0,
+  "attempt": 1,
+  "state": "failed",
+  "tested": {
+    "combination": "20686307c75183efa1bb15071e42dfdae726292f",
+    "on": "5827b6b4255f8e89bf9814e2cbb81e9409d4b108",
+    "submissions": [
+      3
+    ]
+  },
+  "result": "failed",
+  "failed": [
+    {
+      "task": "tests:t-stage-facts",
+      "hash": "a05b38436106b5dd88d3005bcd5633c52722bd228ae096be7017fb2a56783c96",
+      "log": "/Users/chuck/.local/share/boomdrive/repositories/boomdrivedev/crew/crew.git/sluice-remote/origin/.logs/main/c3/tests:t-stage-facts.log"
+    }
+  ],
+  "subject": "design/a-bolt-takes-main-in-with-no-agent"
+}
