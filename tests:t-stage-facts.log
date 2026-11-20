@@ -1,0 +1,4 @@
+--- stdout ---
+FAIL  t-stage-facts   (scratch kept: /private/var/folders/w3/xz7c6dtn6jddd5pmlm6wb4gc0000gn/T/crew-test.8xGhEq)
+      FAIL: markers: crew reads {"tasks":[2,5],"planning":true,"open":["star","numbered","nine digits"]} where openspec reads {"tasks":[2,5],"planning":true,"open":["star","numbered","nine digits 1234567890. [ ] ten digits"]}
+0 passed, 1 failed
